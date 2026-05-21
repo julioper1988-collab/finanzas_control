@@ -46,7 +46,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 
 .balance-card{margin:0 16px 14px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:18px 20px}
 .bal-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}
-.bal-amount{font-size:32px;font-weight:600;letter-spacing:-1px;font-family:'DM Mono',monospace;margin-bottom:14px}
+.bal-amount{font-size:32px;font-weight:600;letter-spacing:-1px;font-family:'DM Mono',monospace;margin-bottom:14px;will-change:contents;-webkit-transform:translateZ(0);transform:translateZ(0)}
 .bal-amount.positive{color:var(--green)}
 .bal-amount.negative{color:var(--red)}
 .bal-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -61,7 +61,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
 .account-card.active{border-color:var(--accent)}
 .account-card-emoji{font-size:18px;margin-bottom:6px}
 .account-card-name{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px}
-.account-card-bal{font-size:14px;font-weight:600;font-family:'DM Mono',monospace}
+.account-card-bal{font-size:14px;font-weight:600;font-family:'DM Mono',monospace;-webkit-transform:translateZ(0);transform:translateZ(0)}
 .account-card-sub{font-size:10px;color:var(--text3);margin-top:3px}
 .income-val{color:var(--green)}
 .expense-val{color:var(--red)}
@@ -340,27 +340,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   </div>
 
   <!-- SALDO GENERAL -->
-  <div class="balance-card">
-    <div class="bal-label">Saldo general</div>
-    <div class="bal-amount positive" id="balAmount">Gs. 0</div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:10px" id="saldoInicialNote"></div>
-    <div class="bal-row">
-      <div class="bal-mini">
-        <div class="bal-mini-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--green)"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
-          Ingresos
-        </div>
-        <div class="bal-mini-val income-val" id="incomeAmt">Gs. 0</div>
-      </div>
-      <div class="bal-mini">
-        <div class="bal-mini-label">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--red)"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
-          Gastos
-        </div>
-        <div class="bal-mini-val expense-val" id="expenseAmt">Gs. 0</div>
-      </div>
-    </div>
-  </div>
+  <div id="balanceCardContainer"></div>
 
   <!-- SALDOS POR CUENTA -->
   <div class="section-head" style="margin-bottom:8px">
@@ -1017,23 +997,51 @@ function getFilteredTx(accountIdx){
 
 // ---- RENDER ----
 function iosReflow(){
-  // No-op - handled by CSS
+  // Force GPU repaint on iOS Safari
+  const els = document.querySelectorAll('.bal-amount, .bal-mini-val, .account-card-bal, .account-card-sub');
+  els.forEach(el => {
+    el.style.transform = 'translateZ(0)';
+    el.offsetHeight;
+    el.style.transform = '';
+  });
 }
 
 function renderBalance(){
   const saldos = getSaldosIniciales();
-  const totalSaldoInicial = Object.values(saldos).reduce((a,b)=>a+b,0);
+  const totalSaldoInicial = Object.values(saldos).reduce((a,b)=>a+Number(b),0);
   const allIncome=transactions.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
   const allExpense=transactions.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
   const allBal=totalSaldoInicial+allIncome-allExpense;
-  const el=document.getElementById('balAmount');
-  el.textContent=fmtGs(allBal);
-  el.className='bal-amount '+(allBal>=0?'positive':'negative');
-  document.getElementById('incomeAmt').textContent=fmtGs(allIncome);
-  document.getElementById('expenseAmt').textContent=fmtGs(allExpense);
-  const note=document.getElementById('saldoInicialNote');
-  if(note&&totalSaldoInicial!==0) note.textContent='Incluye saldo inicial: '+fmtGs(totalSaldoInicial);
-  else if(note) note.textContent='';
+  const balClass='bal-amount '+(allBal>=0?'positive':'negative');
+  const noteHtml=totalSaldoInicial!==0
+    ?`<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Incluye saldo inicial: ${fmtGs(totalSaldoInicial)}</div>`
+    :'';
+  // Fully recreate the card to force repaint on all browsers
+  const container=document.getElementById('balanceCardContainer');
+  if(container){
+    container.innerHTML=`
+      <div class="balance-card">
+        <div class="bal-label">Saldo general</div>
+        <div class="${balClass}">${fmtGs(allBal)}</div>
+        ${noteHtml}
+        <div class="bal-row">
+          <div class="bal-mini">
+            <div class="bal-mini-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--green)"><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+              Ingresos
+            </div>
+            <div class="bal-mini-val income-val">${fmtGs(allIncome)}</div>
+          </div>
+          <div class="bal-mini">
+            <div class="bal-mini-label">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" style="color:var(--red)"><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+              Gastos
+            </div>
+            <div class="bal-mini-val expense-val">${fmtGs(allExpense)}</div>
+          </div>
+        </div>
+      </div>`;
+  }
   renderAccountCards();
 }
 
