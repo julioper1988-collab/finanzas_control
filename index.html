@@ -5,6 +5,7 @@
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Mis Finanzas</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -891,9 +892,6 @@ async function fetchAll(){
   }
   await fetchCustom();
   await fetchSaldosIniciales();
-  // Re-render everything after all data is loaded
-  renderAll();
-  renderDesktop();
 }
 
 async function insertTx(tx){
@@ -1926,23 +1924,38 @@ function setSyncedDesk(ok){
 
 // ---- INIT ----
 async function init(){
+  // Load local data for instant display
+  try{ const s=localStorage.getItem(LOCAL_SALDO); if(s) saldosIniciales=JSON.parse(s); }catch(e){}
   loadLocal();
+  loadCustomLocal();
   renderCatGrid();
-  renderAll();
+
+  // Keep loading overlay until EVERYTHING is fetched from Supabase
   try{
-    await fetchAll();
-    renderAll();
-  }catch(e){setSynced(false);}
-  document.getElementById('loadingOverlay').classList.add('hidden');
+    // Fetch all data in parallel
+    await Promise.all([
+      fetchAll(),
+      fetchSaldosIniciales(),
+      fetchCustom()
+    ]);
+    setSynced(true);
+  }catch(e){
+    setSynced(false);
+  }
+
+  // Only render AFTER all data is ready
+  rebuildDynamicData();
+  renderAll();
   renderDesktop();
+
+  // Hide loading overlay
+  document.getElementById('loadingOverlay').classList.add('hidden');
+
   checkOnline();
   initRealtime();
-  // Load saldos from local first for instant display
-  try{ const s=localStorage.getItem(LOCAL_SALDO); if(s) saldosIniciales=JSON.parse(s); }catch(e){}
-  loadCustomLocal();
-  rebuildDynamicData();
   initCustomRealtime();
-  // Add realtime for saldos
+
+  // Realtime for saldos
   sb.channel('saldos-changes')
     .on('postgres_changes',{event:'*',schema:'public',table:'finanzas_saldos_iniciales'},async()=>{
       await fetchSaldosIniciales();
@@ -2383,12 +2396,7 @@ function initRealtime(){
 
 init();
 
-// Unregister any existing service workers to avoid stale cache
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    regs.forEach(reg => reg.unregister());
-  });
-}
+
 </script>
 </body>
 </html>
