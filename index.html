@@ -1047,21 +1047,25 @@ function renderBalance(){
 
 function renderAccountCards(){
   const accColors={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
+  const saldos=getSaldosIniciales();
   const el=document.getElementById('accountCards');
-  el.innerHTML=ACCOUNTS.map((acc,i)=>{
-    const txs=transactions.filter(t=>t.cuenta===acc);
+  if(!el) return;
+  const allAccs=getAllAccounts();
+  el.innerHTML=allAccs.map((acc,i)=>{
+    const txs=transactions.filter(t=>t.cuenta===acc.nombre);
     const inc=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
     const exp=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
-    const bal=inc-exp;
+    const si=Number(saldos[acc.nombre])||0;
+    const bal=si+inc-exp;
     const isActive=currentAccount===i;
-    return `<div class="account-card${isActive?' active':''}" onclick="selectAccount(${i})" style="${isActive?`border-color:${accColors[acc]}`:''}">
-      <div class="account-card-emoji">${ACCOUNT_EMOJIS[acc]}</div>
-      <div class="account-card-name">${acc}</div>
+    const color=accColors[acc.nombre]||'var(--accent)';
+    return `<div class="account-card${isActive?' active':''}" onclick="selectAccount(${i})" style="${isActive?`border-color:${color}`:''}">
+      <div class="account-card-emoji">${acc.emoji}</div>
+      <div class="account-card-name">${acc.nombre}</div>
       <div class="account-card-bal" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmtGs(bal)}</div>
       <div class="account-card-sub">↑${fmtGs(inc).replace('Gs. ','')} ↓${fmtGs(exp).replace('Gs. ','')}</div>
     </div>`;
   }).join('');
-  // Update filter label
   const lbl=document.getElementById('filterLabel');
   if(lbl) lbl.textContent=currentAccount===4?'Todas':'Ver todas';
 }
