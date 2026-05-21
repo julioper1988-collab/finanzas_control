@@ -1956,8 +1956,10 @@ async function init(){
   renderAll();
   renderDesktop();
 
-  // Hide loading overlay
+  // Hide loading overlay and scroll to top
   document.getElementById('loadingOverlay').classList.add('hidden');
+  window.scrollTo(0,0);
+  document.getElementById('page-inicio').scrollTop = 0;
 
   checkOnline();
   initRealtime();
