@@ -2527,15 +2527,26 @@ function selectAccount(idx){
   currentAccount=idx;
   renderBalance();
   renderTxList();
+  // En escritorio también debe responder al click de cuentas
+  if(typeof renderDeskAccCards==='function') renderDeskAccCards();
+  if(typeof renderDeskRecentTx==='function') renderDeskRecentTx();
+  if(typeof refreshHomeExtras==='function') refreshHomeExtras();
 }
 function clearAccountFilter(){
   currentAccount=4;
   renderBalance();
   renderTxList();
+  if(typeof renderDeskAccCards==='function') renderDeskAccCards();
+  if(typeof renderDeskRecentTx==='function') renderDeskRecentTx();
+  if(typeof refreshHomeExtras==='function') refreshHomeExtras();
+}
+function getAccountNameByIndex(accountIdx){
+  const allAccs = typeof getAllAccounts==='function' ? getAllAccounts() : ACCOUNTS.map(nombre=>({nombre}));
+  return allAccs[accountIdx]?.nombre || ACCOUNTS[accountIdx];
 }
 function getFilteredTx(accountIdx){
   if(accountIdx===4) return transactions;
-  const name=ACCOUNTS[accountIdx];
+  const name=getAccountNameByIndex(accountIdx);
   return transactions.filter(t=>t.cuenta===name);
 }
 
@@ -2894,7 +2905,109 @@ function parsear(text){
   }
   if(fecha.toDateString()!==new Date().toDateString()) fecha.setHours(12,0,0,0);
 
-  return { monto, tipo, categoria, cuenta, descripcion: text.trim(), fecha: fecha.toISOString() };
+  const parsedBase = { monto, tipo, categoria, cuenta, fecha: fecha.toISOString() };
+  return { ...parsedBase, descripcion: cleanDescription(text, parsedBase) };
+}
+
+function cleanDescription(rawText, parsedData){
+  const data = parsedData || {};
+  const original = String(rawText || '').trim();
+
+  function normalizeText(s){
+    return String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'')
+      .replace(/\s+/g,' ')
+      .trim();
+  }
+
+  function escapeRegExp(s){
+    return String(s || '').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  }
+
+  function titleCase(s){
+    const keepLower = new Set(['de','del','en','la','el','los','las','y','a','por','para']);
+    return String(s || '')
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w,i)=>{
+        if(i>0 && keepLower.has(w)) return w;
+        return w.charAt(0).toUpperCase()+w.slice(1);
+      })
+      .join(' ');
+  }
+
+  function phraseFromAction(cleanPart){
+    const base = titleCase(cleanPart);
+    const lowerRaw = normalizeText(original);
+    const tipo = data.tipo || 'gasto';
+
+    if(!base){
+      if(tipo === 'ingreso' && data.cuenta && data.cuenta !== 'Personal') return 'Ingreso de ' + data.cuenta;
+      if(tipo === 'transferencia') return 'Transferencia';
+      return tipo === 'ingreso' ? 'Ingreso' : 'Gasto';
+    }
+
+    if(/^(gasto|pago|compra|ingreso|cobro|venta|transferencia)\b/i.test(base)) return base;
+    if(lowerRaw.match(/\b(compre|compra|comprar|compré)\b/)) return 'Compra de ' + base;
+    if(lowerRaw.match(/\b(pague|pago|pagar|pagué|abone|aboné)\b/)) return 'Pago de ' + base;
+    if(tipo === 'ingreso' || lowerRaw.match(/\b(ingrese|ingreso|ingresé|cobre|cobro|cobré|recibi|recibí|venta|vendi|vendí)\b/)) return 'Ingreso de ' + base;
+    return 'Gasto en ' + base;
+  }
+
+  let desc = ' ' + original + ' ';
+
+  // Eliminar expresiones de fecha que se usan solo para interpretar la fecha real.
+  const datePhrases = [
+    'antes de ayer','anteayer','esta manana','esta mañana','esta tarde','esta noche',
+    'anoche','ayer','hoy','manana','mañana'
+  ];
+  for(const phrase of datePhrases){
+    desc = desc.replace(new RegExp('\\b' + escapeRegExp(phrase) + '\\b','gi'),' ');
+  }
+  desc = desc.replace(/\bhace\s+\d+\s+(dias?|d|horas?|h)\b/gi,' ');
+  desc = desc.replace(/\bel\s+\d{1,2}\s+de\s+[a-záéíóúñ]+\b/gi,' ');
+
+  // Eliminar montos en formatos comunes: 20 mil, 20.000, Gs. 20.000, ₲20.000.
+  desc = desc.replace(/(?:gs\.?|₲)\s*\d+[\d.,]*\s*(?:millones?|millo|mil|k)?\b/gi,' ');
+  desc = desc.replace(/\b\d+[\d.,]*\s*(?:millones?|millo|mil|k)\b/gi,' ');
+  if(data.monto){
+    const montoPlain = String(data.monto);
+    const montoDots = Number(data.monto).toLocaleString('es-PY');
+    desc = desc.replace(new RegExp('\\b' + escapeRegExp(montoPlain) + '\\b','g'),' ');
+    desc = desc.replace(new RegExp('\\b' + escapeRegExp(montoDots) + '\\b','g'),' ');
+  }
+
+  // Eliminar palabras de acción: indican tipo, pero no deben ensuciar la descripción.
+  const actionWords = [
+    'gaste','gasté','gasto','pague','pagué','pago','pagar','abone','aboné',
+    'compre','compré','compra','comprar','ingrese','ingresé','ingreso',
+    'cobre','cobré','cobro','recibi','recibí','recibo','vendi','vendí','venta'
+  ];
+  for(const w of actionWords){
+    desc = desc.replace(new RegExp('\\b' + escapeRegExp(w) + '\\b','gi'),' ');
+  }
+
+  // Eliminar la cuenta detectada y alias habituales de cuentas.
+  const accountWords = ['personal','bodega','guaripola','asadito','asaditos','traga','tragamoneda','tragamonedas','maquina','maquinas','slot','wepa','efectivo','banco','ueno','familiar'];
+  if(data.cuenta) accountWords.push(data.cuenta);
+  for(const acc of customAccounts || []) accountWords.push(acc.nombre);
+  for(const acc of [...new Set(accountWords.filter(Boolean))]){
+    desc = desc.replace(new RegExp('\\b' + escapeRegExp(acc) + '\\b','gi'),' ');
+  }
+
+  // Limpieza final de conectores y espacios.
+  desc = desc
+    .replace(/[,:;|]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .replace(/^(en|de|del|para|por|a|el|la|los|las|un|una)\s+/i,'')
+    .replace(/\s+(en|de|del|para|por|a|el|la|los|las|un|una)$/i,'')
+    .trim();
+
+  return phraseFromAction(desc);
 }
 
 async function procesarEntrada(){
@@ -3285,14 +3398,19 @@ function renderDeskAccCards(){
   const saldos=getSaldosIniciales();
   const el=document.getElementById('deskAccCards');
   if(!el) return;
-  el.innerHTML=ACCOUNTS.map(acc=>{
+  const allAccs = typeof getAllAccounts==='function' ? getAllAccounts() : ACCOUNTS.map(nombre=>({nombre,emoji:ACCOUNT_EMOJIS[nombre]}));
+  el.innerHTML=allAccs.map((accObj,i)=>{
+    const acc=accObj.nombre;
+    const emoji=accObj.emoji || ACCOUNT_EMOJIS[acc] || '💼';
     const txs=transactions.filter(t=>t.cuenta===acc);
     const inc=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
     const exp=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
     const si=saldos[acc]||0;
     const bal=si+inc-exp;
-    return `<div class="desk-acc-card">
-      <div class="desk-acc-emoji">${ACCOUNT_EMOJIS[acc]}</div>
+    const isActive=currentAccount===i;
+    const color=accColors[acc]||'var(--accent)';
+    return `<div class="desk-acc-card${isActive?' active':''}" onclick="selectAccount(${i})" title="Filtrar por ${acc}" style="${isActive?`border-color:${color}`:''}">
+      <div class="desk-acc-emoji">${emoji}</div>
       <div class="desk-acc-name">${acc}</div>
       <div class="desk-acc-bal" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmtGs(bal)}</div>
       <div class="desk-acc-sub">↑ ${fmtGs(inc).replace('Gs. ','')} &nbsp;↓ ${fmtGs(exp).replace('Gs. ','')}</div>
@@ -3303,7 +3421,7 @@ function renderDeskAccCards(){
 function renderDeskRecentTx(){
   const el=document.getElementById('deskTxBody');
   if(!el) return;
-  const txs=transactions.slice(0,15);
+  const txs=getFilteredTx(currentAccount).slice(0,15);
   if(!txs.length){el.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">Sin movimientos</td></tr>';return;}
   el.innerHTML=txs.map(tx=>{
     const isIn=tx.tipo==='ingreso';
@@ -3314,7 +3432,7 @@ function renderDeskRecentTx(){
     return `<tr onclick="openEditModal('${tx.id}')">
       <td>${badge}</td>
       <td>${tx.descripcion||tx.categoria||'—'}</td>
-      <td>${ACCOUNT_EMOJIS[tx.cuenta]} ${tx.cuenta}</td>
+      <td>${(getAllAccounts().find(a=>a.nombre===tx.cuenta)?.emoji || ACCOUNT_EMOJIS[tx.cuenta] || '')} ${tx.cuenta}</td>
       <td style="color:var(--text3)">${fmtDate(tx.fecha)}</td>
       <td class="td-amt" style="color:${amtColor}">${isIn?'+':'-'}${fmtGs(tx.monto)}</td>
     </tr>`;
@@ -3348,7 +3466,7 @@ function renderDeskHistory(){
       <td>${badge}</td>
       <td>${tx.descripcion||'—'}</td>
       <td><span style="color:var(--text2)">${tx.categoria||'—'}</span></td>
-      <td>${ACCOUNT_EMOJIS[tx.cuenta]} ${tx.cuenta}</td>
+      <td>${(getAllAccounts().find(a=>a.nombre===tx.cuenta)?.emoji || ACCOUNT_EMOJIS[tx.cuenta] || '')} ${tx.cuenta}</td>
       <td style="color:var(--text3);font-size:12px">${fmtDate(tx.fecha)}</td>
       <td class="td-amt" style="color:${amtColor}">${isIn?'+':'-'}${fmtGs(tx.monto)}</td>
       <td><span style="color:var(--text3);font-size:16px;cursor:pointer" onclick="event.stopPropagation();deleteTx('${tx.id}')">🗑</span></td>
