@@ -2207,6 +2207,17 @@ function saveLocal(){
     localStorage.setItem(LOCAL_DEBTS,JSON.stringify(debts));
   }catch(e){}
 }
+
+function addOrUpdateTransaction(tx){
+  if(!tx) return;
+  const idx=transactions.findIndex(t=>String(t.id)===String(tx.id));
+  if(idx>=0){
+    transactions[idx]={...transactions[idx],...tx};
+  }else{
+    transactions.unshift(tx);
+  }
+  saveLocal();
+}
 function getPending(){
   try{const p=localStorage.getItem(LOCAL_PENDING);return p?JSON.parse(p):[]}catch(e){return[]}
 }
@@ -2241,15 +2252,13 @@ async function insertTx(tx){
   const row={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
   if(!navigator.onLine){
     tx.id='local_'+Date.now();
-    transactions.unshift(tx);
+    addOrUpdateTransaction(tx);
     addPending({table:'finanzas_movimientos',row});
-    saveLocal();
     return tx;
   }
   const{data,error}=await sb.from('finanzas_movimientos').insert(row).select().single();
   if(error) throw error;
-  transactions.unshift(data);
-  saveLocal();
+  addOrUpdateTransaction(data);
   return data;
 }
 
@@ -3732,18 +3741,16 @@ function goPage(name){
 function initRealtime(){
   sb.channel('finanzas-changes')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'finanzas_movimientos'}, payload=>{
-      // Only add if not already in list (avoid duplicating own inserts)
-      if(!transactions.find(t=>String(t.id)===String(payload.new.id))){
-        transactions.unshift(payload.new);
-        saveLocal();
-        renderAll();
-        renderDeskHistory();
-        showToast('🔄 Nuevo movimiento sincronizado');
-      }
+      const existed=transactions.some(t=>String(t.id)===String(payload.new.id));
+      addOrUpdateTransaction(payload.new);
+      renderAll();
+      renderDeskHistory();
+      if(!existed) showToast('🔄 Nuevo movimiento sincronizado');
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'finanzas_movimientos'}, payload=>{
-      const i=transactions.findIndex(t=>String(t.id)===String(payload.new.id));
-      if(i>=0){ transactions[i]=payload.new; saveLocal(); renderAll(); renderDeskHistory(); }
+      addOrUpdateTransaction(payload.new);
+      renderAll();
+      renderDeskHistory();
     })
     .on('postgres_changes', {event:'DELETE', schema:'public', table:'finanzas_movimientos'}, payload=>{
       transactions=transactions.filter(t=>String(t.id)!==String(payload.old.id));
