@@ -1879,6 +1879,14 @@ input[type="date"].modal-input{
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
     Nueva categoría
   </button>
+
+  <!-- HERRAMIENTA SEGURA: LIMPIAR DESCRIPCIONES ANTIGUAS -->
+  <div class="section-head" style="margin:18px 0 8px">
+    <span class="section-title">Mantenimiento</span>
+  </div>
+  <button class="add-debt-btn" onclick="openCleanDescriptionsTool()">
+    🧹 Limpiar descripciones antiguas
+  </button>
 </div>
 
 </div><!-- /mobileRoot -->
@@ -1928,6 +1936,24 @@ input[type="date"].modal-input{
       <button class="tipo-btn" id="newCatBtnAmbos" onclick="setNewCatTipo('ambos')">↕ Ambos</button>
     </div>
     <button class="modal-submit" onclick="saveNuevaCat()">Crear categoría</button>
+  </div>
+</div>
+
+<!-- MODAL LIMPIAR DESCRIPCIONES ANTIGUAS -->
+<div class="modal-overlay" id="cleanDescModal" onclick="if(event.target===this)closeCleanDescriptionsTool()">
+  <div class="modal-sheet" style="max-height:88vh;overflow-y:auto">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Limpiar descripciones antiguas</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:12px">
+      Vista previa segura. Solo se modifica <b>descripción</b>; no cambia monto, fecha, cuenta, categoría ni tipo.
+    </div>
+    <div id="cleanDescSummary" style="background:var(--bg3);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:12px;font-size:13px;color:var(--text2)"></div>
+    <div id="cleanDescList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button class="modal-submit" onclick="applyAllCleanDescriptions()" style="margin-top:0">Aplicar todos</button>
+      <button class="modal-submit" onclick="applySelectedCleanDescriptions()" style="margin-top:0;background:var(--green)">Aplicar seleccionados</button>
+    </div>
+    <button onclick="closeCleanDescriptionsTool()" style="width:100%;padding:11px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:8px">Cancelar</button>
   </div>
 </div>
 
@@ -2157,6 +2183,11 @@ input[type="date"].modal-input{
           </div>
           <div id="deskCatList" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
+      </div>
+      <div class="desk-card" style="margin-top:16px">
+        <div style="font-size:14px;font-weight:500;margin-bottom:8px">Mantenimiento</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.4">Revisá descripciones antiguas antes de modificarlas. Solo se actualiza el campo descripción.</div>
+        <button onclick="openCleanDescriptionsTool()" style="padding:10px 18px;border-radius:var(--radius-sm);background:var(--accent);border:none;color:#0f1a14;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🧹 Limpiar descripciones antiguas</button>
       </div>
     </div>
   </main>
@@ -3907,6 +3938,130 @@ async function deleteCat(id){
     rebuildDynamicData();
     showToast('🗑 Categoría eliminada');
   }catch(e){showToast('❌ Error');}
+}
+
+
+// ── LIMPIEZA SEGURA DE DESCRIPCIONES ANTIGUAS ────────────────────────────────
+let descCleanupCandidates=[];
+
+function escapeHTML(s){
+  return String(s ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function normalizeForCompare(s){
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function isOldMessyDescription(desc){
+  const t=normalizeForCompare(desc);
+  if(!t) return false;
+  return /\b(ayer|anteayer|hoy|manana|mañana|anoche|gaste|gasto|gasté|pague|pagué|pago|compre|compré|compra|ingrese|ingresé|ingreso|cobre|cobré|cobro|recibi|recibí|personal|bodega|guaripola|asadito|asaditos|tragamonedas|tragamoneda|wepa|ueno)\b/.test(t)
+    || /\b\d+[\d.,]*\s*(mil|k|millon|millones|millo)\b/.test(t)
+    || /(?:gs\.?|₲)\s*\d+/i.test(desc);
+}
+
+function buildCleanDescriptionCandidates(){
+  const candidates=[];
+  for(const tx of transactions || []){
+    if(!tx || !tx.id || !tx.descripcion) continue;
+    const before=String(tx.descripcion || '').trim();
+    if(!isOldMessyDescription(before)) continue;
+
+    const cleaned=cleanDescription(before, {
+      tipo: tx.tipo,
+      monto: tx.monto,
+      cuenta: tx.cuenta,
+      categoria: tx.categoria,
+      fecha: tx.fecha
+    });
+    const after=String(cleaned || '').trim();
+
+    if(!after) continue;
+    if(normalizeForCompare(before)===normalizeForCompare(after)) continue;
+    candidates.push({id:tx.id,before,after,tx});
+  }
+  return candidates;
+}
+
+function openCleanDescriptionsTool(){
+  descCleanupCandidates=buildCleanDescriptionCandidates();
+  renderCleanDescriptionsPreview();
+  const modal=document.getElementById('cleanDescModal');
+  if(modal) modal.classList.add('open');
+}
+
+function closeCleanDescriptionsTool(){
+  const modal=document.getElementById('cleanDescModal');
+  if(modal) modal.classList.remove('open');
+}
+
+function renderCleanDescriptionsPreview(){
+  const summary=document.getElementById('cleanDescSummary');
+  const list=document.getElementById('cleanDescList');
+  if(!summary || !list) return;
+
+  if(!descCleanupCandidates.length){
+    summary.innerHTML='✅ No encontré descripciones antiguas que necesiten limpieza.';
+    list.innerHTML='';
+    return;
+  }
+
+  summary.innerHTML=`Encontré <b>${descCleanupCandidates.length}</b> posible${descCleanupCandidates.length===1?'':'s'} mejora${descCleanupCandidates.length===1?'':'s'}. Revisá antes de aplicar.`;
+  list.innerHTML=descCleanupCandidates.map((c,i)=>`
+    <label style="display:block;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--radius-sm);padding:12px;cursor:pointer">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <input type="checkbox" class="clean-desc-check" data-index="${i}" checked style="margin-top:3px;transform:scale(1.1)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Antes</div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.35;margin-bottom:8px;word-break:break-word">${escapeHTML(c.before)}</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Después</div>
+          <div style="font-size:14px;color:var(--text);font-weight:700;line-height:1.35;word-break:break-word">${escapeHTML(c.after)}</div>
+        </div>
+      </div>
+    </label>
+  `).join('');
+}
+
+async function applyCleanDescriptions(indexes){
+  const selected=[...new Set(indexes)].map(i=>descCleanupCandidates[i]).filter(Boolean);
+  if(!selected.length){showToast('⚠️ No seleccionaste cambios');return;}
+  if(!confirm(`¿Aplicar ${selected.length} cambio${selected.length===1?'':'s'}? Solo se modificará la descripción.`)) return;
+
+  let ok=0, fail=0;
+  for(const c of selected){
+    try{
+      if(!c.after || normalizeForCompare(c.before)===normalizeForCompare(c.after)) continue;
+      await updateTxInSB(c.id,{descripcion:c.after});
+      ok++;
+    }catch(e){
+      console.error('Error limpiando descripción', c.id, e);
+      fail++;
+    }
+  }
+  renderAll();
+  renderHistory();
+  renderDeskHistory();
+  closeCleanDescriptionsTool();
+  showToast(fail ? `⚠️ ${ok} corregidos, ${fail} con error` : `✅ ${ok} descripciones corregidas`);
+}
+
+function applyAllCleanDescriptions(){
+  applyCleanDescriptions(descCleanupCandidates.map((_,i)=>i));
+}
+
+function applySelectedCleanDescriptions(){
+  const checks=[...document.querySelectorAll('.clean-desc-check:checked')];
+  applyCleanDescriptions(checks.map(ch=>parseInt(ch.dataset.index,10)).filter(Number.isFinite));
 }
 
 // ── RENDER CONFIG ─────────────────────────────────────────────────────────────
