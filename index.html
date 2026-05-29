@@ -2194,6 +2194,109 @@ let histFilter = 'all';
 let pending = null;
 let selectedCat = null;
 
+
+// ---- SINCRONIZACIÓN SEGURA / ANTI-DUPLICADOS ----
+const LOCAL_DEVICE_ID = 'fin_device_id_v1';
+let savingMovimiento = false;
+let renderQueued = false;
+
+function getDeviceId(){
+  try{
+    let id = localStorage.getItem(LOCAL_DEVICE_ID);
+    if(!id){
+      id = 'dev_' + generateLocalUUID();
+      localStorage.setItem(LOCAL_DEVICE_ID,id);
+    }
+    return id;
+  }catch(e){
+    return 'dev_memory_' + Math.random().toString(36).slice(2);
+  }
+}
+const DEVICE_ID = getDeviceId();
+
+function generateLocalUUID(){
+  if(window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'uuid_' + Date.now() + '_' + Math.random().toString(36).slice(2,10);
+}
+function ensureLocalUUID(obj){
+  if(!obj.local_uuid) obj.local_uuid = generateLocalUUID();
+  if(!obj.client_device_id) obj.client_device_id = DEVICE_ID;
+  return obj;
+}
+function normName(v){
+  return String(v||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function getTxKey(t){
+  if(t?.local_uuid) return 'lu:' + t.local_uuid;
+  if(t?.client_id) return 'ci:' + t.client_id;
+  if(t?.id) return 'id:' + t.id;
+  return '';
+}
+function sameEntity(a,b){
+  if(!a||!b) return false;
+  if(a.id!=null && b.id!=null && String(a.id)===String(b.id)) return true;
+  if(a.local_uuid && b.local_uuid && String(a.local_uuid)===String(b.local_uuid)) return true;
+  if(a.client_id && b.client_id && String(a.client_id)===String(b.client_id)) return true;
+  return false;
+}
+function parseSortTime(t){
+  return new Date(t?.fecha || t?.created_at || 0).getTime() || 0;
+}
+function sortTransactionsSafe(){
+  transactions.sort((a,b)=>{
+    const tf=parseSortTime(b)-parseSortTime(a);
+    if(tf) return tf;
+    return String(b.created_at||b.id||'').localeCompare(String(a.created_at||a.id||''));
+  });
+}
+function dedupeTransactions(){
+  const out=[];
+  for(const tx of transactions){
+    if(!tx) continue;
+    const i=out.findIndex(x=>sameEntity(x,tx));
+    if(i>=0) out[i]={...out[i],...tx};
+    else out.push(tx);
+  }
+  transactions=out;
+  sortTransactionsSafe();
+}
+function dedupeDebts(){
+  const out=[];
+  for(const d of debts){
+    if(!d) continue;
+    const i=out.findIndex(x=>String(x.id)===String(d.id));
+    if(i>=0) out[i]={...out[i],...d};
+    else out.push(d);
+  }
+  debts=out;
+}
+function removeLocalTxByUUID(local_uuid){
+  if(!local_uuid) return;
+  transactions=transactions.filter(t=>String(t.local_uuid)!==String(local_uuid) || !String(t.id||'').startsWith('local_'));
+}
+function isOwnRealtimeRow(row){
+  return !!(row && row.client_device_id && row.client_device_id===DEVICE_ID);
+}
+function scheduleRender(){
+  if(renderQueued) return;
+  renderQueued=true;
+  requestAnimationFrame(()=>{
+    renderQueued=false;
+    renderBalance();
+    renderTxList();
+    renderStats();
+    renderDesktop();
+    if(typeof refreshHomeExtras === 'function') setTimeout(refreshHomeExtras, 0);
+    const activeDPage = document.querySelector('.desktop-page.active');
+    if(activeDPage){
+      const id = activeDPage.id;
+      if(id==='dpage-historial') renderDeskHistory();
+      if(id==='dpage-deudas') renderDeskDebts();
+      if(id==='dpage-stats') renderDeskStats();
+    }
+  });
+}
+
 // ---- LOCAL STORAGE ----
 function loadLocal(){
   try{
@@ -2203,27 +2306,48 @@ function loadLocal(){
 }
 function saveLocal(){
   try{
+    dedupeTransactions();
+    dedupeDebts();
     localStorage.setItem(LOCAL_TX,JSON.stringify(transactions));
     localStorage.setItem(LOCAL_DEBTS,JSON.stringify(debts));
-  }catch(e){}
+  }catch(e){
+    console.warn('No se pudo guardar respaldo local:', e);
+  }
 }
 
 function addOrUpdateTransaction(tx){
   if(!tx) return;
-  const idx=transactions.findIndex(t=>String(t.id)===String(tx.id));
+  const idx=transactions.findIndex(t=>sameEntity(t,tx));
   if(idx>=0){
     transactions[idx]={...transactions[idx],...tx};
   }else{
     transactions.unshift(tx);
   }
+  dedupeTransactions();
+  saveLocal();
+}
+
+function addOrUpdateDebt(debt){
+  if(!debt) return;
+  const idx=debts.findIndex(d=>String(d.id)===String(debt.id));
+  if(idx>=0) debts[idx]={...debts[idx],...debt};
+  else debts.unshift(debt);
+  dedupeDebts();
   saveLocal();
 }
 function getPending(){
   try{const p=localStorage.getItem(LOCAL_PENDING);return p?JSON.parse(p):[]}catch(e){return[]}
 }
 function addPending(item){
-  const p=getPending();p.push(item);
-  try{localStorage.setItem(LOCAL_PENDING,JSON.stringify(p))}catch(e){}
+  item.pending_id = item.pending_id || generateLocalUUID();
+  if(item.row) ensureLocalUUID(item.row);
+  const p=getPending();
+  const exists=p.some(x=>x.pending_id===item.pending_id || (x.row&&item.row&&x.row.local_uuid&&x.row.local_uuid===item.row.local_uuid));
+  if(!exists) p.push(item);
+  try{localStorage.setItem(LOCAL_PENDING,JSON.stringify(p))}catch(e){console.warn('No se pudo guardar pendiente:', e);}
+}
+function savePendingList(list){
+  try{localStorage.setItem(LOCAL_PENDING,JSON.stringify(list))}catch(e){console.warn('No se pudo actualizar pendientes:', e);}
 }
 function clearPending(){
   try{localStorage.removeItem(LOCAL_PENDING)}catch(e){}
@@ -2236,8 +2360,8 @@ async function fetchAll(){
       sb.from('finanzas_movimientos').select('*').order('fecha',{ascending:false}),
       sb.from('finanzas_deudas').select('*').order('fecha',{ascending:false})
     ]);
-    if(txData) transactions=txData;
-    if(debtData) debts=debtData;
+    if(txData){ transactions=txData; dedupeTransactions(); }
+    if(debtData){ debts=debtData; dedupeDebts(); }
     saveLocal();
     setSynced(true);
   }catch(e){
@@ -2249,15 +2373,39 @@ async function fetchAll(){
 }
 
 async function insertTx(tx){
-  const row={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
+  ensureLocalUUID(tx);
+  const row={
+    tipo:tx.tipo,
+    monto:tx.monto,
+    categoria:tx.categoria,
+    descripcion:tx.descripcion,
+    cuenta:tx.cuenta,
+    fecha:tx.fecha,
+    local_uuid:tx.local_uuid,
+    client_device_id:tx.client_device_id
+  };
+
   if(!navigator.onLine){
-    tx.id='local_'+Date.now();
+    tx.id=tx.id || ('local_'+tx.local_uuid);
     addOrUpdateTransaction(tx);
     addPending({table:'finanzas_movimientos',row});
     return tx;
   }
-  const{data,error}=await sb.from('finanzas_movimientos').insert(row).select().single();
+
+  let {data,error}=await sb.from('finanzas_movimientos').insert(row).select().single();
+
+  // Si todavía no agregaste las columnas nuevas en Supabase, el sistema no se rompe:
+  // reintenta sin local_uuid/client_device_id, pero la protección completa requiere el SQL indicado abajo.
+  if(error && /local_uuid|client_device_id|column/i.test(error.message||'')){
+    const fallbackRow={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
+    const retry=await sb.from('finanzas_movimientos').insert(fallbackRow).select().single();
+    data=retry.data; error=retry.error;
+  }
   if(error) throw error;
+
+  if(data && tx.local_uuid && !data.local_uuid) data.local_uuid=tx.local_uuid;
+  if(data && tx.client_device_id && !data.client_device_id) data.client_device_id=tx.client_device_id;
+  removeLocalTxByUUID(tx.local_uuid);
   addOrUpdateTransaction(data);
   return data;
 }
@@ -2273,35 +2421,33 @@ async function updateTxInSB(id,updates){
   if(!String(id).startsWith('local_')){
     await sb.from('finanzas_movimientos').update(updates).eq('id',id);
   }
-  const i=transactions.findIndex(t=>String(t.id)===String(id));
-  if(i>=0) transactions[i]={...transactions[i],...updates};
-  saveLocal();
+  const current=transactions.find(t=>String(t.id)===String(id));
+  if(current) addOrUpdateTransaction({...current,...updates});
+  else saveLocal();
 }
 async function insertDebt(debt){
   const row={nombre:debt.nombre,monto_original:debt.monto_original,monto_restante:debt.monto_restante,nota:debt.nota,fecha:debt.fecha};
   if(!navigator.onLine){
-    debt.id='local_'+Date.now();
-    debts.unshift(debt);
+    debt.id=debt.id || ('local_'+Date.now());
+    addOrUpdateDebt(debt);
     addPending({table:'finanzas_deudas',row});
-    saveLocal();
     return debt;
   }
   const{data,error}=await sb.from('finanzas_deudas').insert(row).select().single();
   if(error) throw error;
-  debts.unshift(data);
-  saveLocal();
+  addOrUpdateDebt(data);
   return data;
 }
 
+
 async function updateDebt(id,updates){
+  const current=debts.find(d=>String(d.id)===String(id));
   if(String(id).startsWith('local_')){
-    const i=debts.findIndex(d=>d.id===id);
-    if(i>=0){debts[i]={...debts[i],...updates};saveLocal();}
+    if(current) addOrUpdateDebt({...current,...updates});
     return;
   }
   await sb.from('finanzas_deudas').update(updates).eq('id',id);
-  const i=debts.findIndex(d=>d.id===id);
-  if(i>=0){debts[i]={...debts[i],...updates};saveLocal();}
+  if(current) addOrUpdateDebt({...current,...updates});
 }
 
 async function deleteDebt(id){
@@ -2313,13 +2459,39 @@ async function deleteDebt(id){
 }
 
 async function syncPending(){
-  const pending=getPending();
-  if(!pending.length) return;
-  for(const item of pending){
-    try{await sb.from(item.table).insert(item.row);}catch(e){}
+  const list=getPending();
+  if(!list.length) return;
+  const remaining=[];
+
+  for(const item of list){
+    try{
+      const row={...(item.row||{})};
+      ensureLocalUUID(row);
+      let {data,error}=await sb.from(item.table).insert(row).select().single();
+
+      // Compatibilidad si todavía no existen las columnas nuevas en Supabase.
+      if(error && item.table==='finanzas_movimientos' && /local_uuid|client_device_id|column/i.test(error.message||'')){
+        const {local_uuid,client_device_id,...fallbackRow}=row;
+        const retry=await sb.from(item.table).insert(fallbackRow).select().single();
+        data=retry.data; error=retry.error;
+        if(data){ data.local_uuid=local_uuid; data.client_device_id=client_device_id; }
+      }
+      if(error) throw error;
+
+      if(item.table==='finanzas_movimientos'){
+        removeLocalTxByUUID(row.local_uuid);
+        addOrUpdateTransaction(data || row);
+      }
+      if(item.table==='finanzas_deudas') addOrUpdateDebt(data || row);
+    }catch(e){
+      remaining.push(item);
+      console.warn('Pendiente no sincronizado:', e);
+    }
   }
-  clearPending();
+  if(remaining.length) savePendingList(remaining);
+  else clearPending();
 }
+
 
 async function syncAll(){
   showToast('🔄 Sincronizando...');
@@ -2570,20 +2742,7 @@ function renderStats(){
 }
 
 function renderAll(){
-  requestAnimationFrame(()=>{
-    renderBalance();
-    renderTxList();
-    renderStats();
-    renderDesktop();
-    if(typeof refreshHomeExtras === 'function') setTimeout(refreshHomeExtras, 0);
-    const activeDPage = document.querySelector('.desktop-page.active');
-    if(activeDPage){
-      const id = activeDPage.id;
-      if(id==='dpage-historial') renderDeskHistory();
-      if(id==='dpage-deudas') renderDeskDebts();
-      if(id==='dpage-stats') renderDeskStats();
-    }
-  });
+  scheduleRender();
 }
 
 // ---- CATEGORIES ----
@@ -2780,26 +2939,30 @@ async function procesarEntrada(){
 }
 
 async function confirmar(){
-  if(!pending) return;
+  if(!pending || savingMovimiento) return;
+  savingMovimiento=true;
   const btnOk=document.getElementById('btnConfirmar');
-  btnOk.textContent='Guardando...';
-  btnOk.disabled=true;
+  const oldText=btnOk?btnOk.textContent:'✓ Confirmar';
+  if(btnOk){btnOk.textContent='Guardando...';btnOk.disabled=true;}
   try{
     const tx={tipo:pending.tipo,monto:pending.monto,categoria:pending.categoria||'General',descripcion:pending.descripcion,cuenta:pending.cuenta,fecha:pending.fecha||new Date().toISOString()};
+    ensureLocalUUID(tx);
     await insertTx(tx);
     renderAll();
-    renderDeskHistory();
     cancelar();
     document.getElementById('entryInput').value='';
     selectedCat=null;
     document.querySelectorAll('.cat-pill').forEach(p=>p.classList.remove('selected'));
     showToast(navigator.onLine?'✅ Guardado en Supabase':'💾 Guardado localmente');
   }catch(e){
+    console.error(e);
     showToast('❌ Error al guardar');
+  }finally{
+    savingMovimiento=false;
+    if(btnOk){btnOk.textContent=oldText;btnOk.disabled=false;}
   }
-  btnOk.textContent='✓ Confirmar';
-  btnOk.disabled=false;
 }
+
 
 function cancelar(){
   pending=null;
@@ -2932,13 +3095,15 @@ function filterManualCats(){
   document.getElementById('manualCat').value=val;
 }
 async function saveManual(){
+  if(savingMovimiento) return;
+  savingMovimiento=true;
   const cuenta=document.getElementById('manualCuenta').value;
   const catInput=document.getElementById('manualCatInput').value.trim();
   const categoria=catInput||document.getElementById('manualCat').value;
   const monto=parseFloat(document.getElementById('manualMonto').value);
   const desc=document.getElementById('manualDesc').value.trim();
-  if(!monto||monto<=0){showToast('⚠️ Ingresá un monto válido');return;}
-  if(!categoria){showToast('⚠️ Seleccioná una categoría');return;}
+  if(!monto||monto<=0){savingMovimiento=false;showToast('⚠️ Ingresá un monto válido');return;}
+  if(!categoria){savingMovimiento=false;showToast('⚠️ Seleccioná una categoría');return;}
 
   // Validar que la categoría exista
   const catsValidas = getAllCategories(tipoManual).map(c=>c.nombre.toLowerCase());
@@ -2951,18 +3116,19 @@ async function saveManual(){
         if(navigator.onLine){
           const{data,error}=await sb.from('finanzas_categorias').insert(row).select().single();
           if(error) throw error;
-          customCategories.push(data);
+          addOrUpdateCustomCategory(data);
         } else {
-          customCategories.push({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
+          addOrUpdateCustomCategory({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
         }
         saveCustomLocal();
         rebuildDynamicData();
-      }catch(e){ showToast('❌ Error al crear categoría'); return; }
+      }catch(e){ savingMovimiento=false; showToast('❌ Error al crear categoría'); return; }
     } else {
       // Limpiar el campo y no guardar
       document.getElementById('manualCatInput').value='';
       document.getElementById('manualCat').value='';
       showToast('⚠️ Elegí una categoría válida');
+      savingMovimiento=false;
       return;
     }
   }
@@ -3457,9 +3623,11 @@ function loadCustomLocal(){
 }
 function saveCustomLocal(){
   try{
+    customAccounts=customAccounts.filter((a,i,arr)=>i===arr.findIndex(x=>String(x.id)===String(a.id) || normName(x.nombre)===normName(a.nombre)));
+    customCategories=customCategories.filter((c,i,arr)=>i===arr.findIndex(x=>String(x.id)===String(c.id) || (normName(x.nombre)===normName(c.nombre) && String(x.tipo||'')===String(c.tipo||''))));
     localStorage.setItem(LOCAL_CUENTAS,JSON.stringify(customAccounts));
     localStorage.setItem(LOCAL_CATS,JSON.stringify(customCategories));
-  }catch(e){}
+  }catch(e){console.warn('No se pudo guardar configuración local:', e);}
 }
 
 async function fetchCustom(){
@@ -3525,6 +3693,23 @@ function renderAccountSelects(){
   }
 }
 
+function addOrUpdateCustomAccount(acc){
+  if(!acc) return;
+  const idx=customAccounts.findIndex(a=>String(a.id)===String(acc.id) || normName(a.nombre)===normName(acc.nombre));
+  if(idx>=0) customAccounts[idx]={...customAccounts[idx],...acc};
+  else customAccounts.push(acc);
+  customAccounts=customAccounts.filter((a,i,arr)=>i===arr.findIndex(x=>String(x.id)===String(a.id) || normName(x.nombre)===normName(a.nombre)));
+  saveCustomLocal();
+}
+function addOrUpdateCustomCategory(cat){
+  if(!cat) return;
+  const idx=customCategories.findIndex(c=>String(c.id)===String(cat.id) || (normName(c.nombre)===normName(cat.nombre) && String(c.tipo||'')===String(cat.tipo||'')));
+  if(idx>=0) customCategories[idx]={...customCategories[idx],...cat};
+  else customCategories.push(cat);
+  customCategories=customCategories.filter((c,i,arr)=>i===arr.findIndex(x=>String(x.id)===String(c.id) || (normName(x.nombre)===normName(c.nombre) && String(x.tipo||'')===String(c.tipo||''))));
+  saveCustomLocal();
+}
+
 // ── NUEVA CUENTA ──────────────────────────────────────────────────────────────
 function openNewCuentaModal(){
   document.getElementById('newCuentaNombre').value='';
@@ -3541,9 +3726,9 @@ async function saveNuevaCuenta(){
     if(navigator.onLine){
       const{data,error}=await sb.from('finanzas_cuentas').insert(row).select().single();
       if(error) throw error;
-      customAccounts.push(data);
+      addOrUpdateCustomAccount(data);
     } else {
-      customAccounts.push({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
+      addOrUpdateCustomAccount({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
     }
     saveCustomLocal();
     rebuildDynamicData();
@@ -3585,9 +3770,9 @@ async function saveNuevaCat(){
     if(navigator.onLine){
       const{data,error}=await sb.from('finanzas_categorias').insert(row).select().single();
       if(error) throw error;
-      customCategories.push(data);
+      addOrUpdateCustomCategory(data);
     } else {
-      customCategories.push({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
+      addOrUpdateCustomCategory({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
     }
     saveCustomLocal();
     rebuildDynamicData();
@@ -3679,12 +3864,14 @@ function populateEditCats(tipo,current){
 function initCustomRealtime(){
   sb.channel('config-changes')
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'finanzas_cuentas'},payload=>{
-      if(!customAccounts.find(a=>String(a.id)===String(payload.new.id))){
-        customAccounts.push(payload.new);
-        saveCustomLocal();
-        rebuildDynamicData();
-        showToast('🔄 Nueva cuenta sincronizada');
-      }
+      const existed=customAccounts.some(a=>String(a.id)===String(payload.new.id) || normName(a.nombre)===normName(payload.new.nombre));
+      addOrUpdateCustomAccount(payload.new);
+      rebuildDynamicData();
+      if(!existed) showToast('🔄 Nueva cuenta sincronizada');
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'finanzas_cuentas'},payload=>{
+      addOrUpdateCustomAccount(payload.new);
+      rebuildDynamicData();
     })
     .on('postgres_changes',{event:'DELETE',schema:'public',table:'finanzas_cuentas'},payload=>{
       customAccounts=customAccounts.filter(a=>String(a.id)!==String(payload.old.id));
@@ -3692,12 +3879,14 @@ function initCustomRealtime(){
       rebuildDynamicData();
     })
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'finanzas_categorias'},payload=>{
-      if(!customCategories.find(c=>String(c.id)===String(payload.new.id))){
-        customCategories.push(payload.new);
-        saveCustomLocal();
-        rebuildDynamicData();
-        showToast('🔄 Nueva categoría sincronizada');
-      }
+      const existed=customCategories.some(c=>String(c.id)===String(payload.new.id) || (normName(c.nombre)===normName(payload.new.nombre) && String(c.tipo||'')===String(payload.new.tipo||'')));
+      addOrUpdateCustomCategory(payload.new);
+      rebuildDynamicData();
+      if(!existed) showToast('🔄 Nueva categoría sincronizada');
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'finanzas_categorias'},payload=>{
+      addOrUpdateCustomCategory(payload.new);
+      rebuildDynamicData();
     })
     .on('postgres_changes',{event:'DELETE',schema:'public',table:'finanzas_categorias'},payload=>{
       customCategories=customCategories.filter(c=>String(c.id)!==String(payload.old.id));
@@ -3741,31 +3930,28 @@ function goPage(name){
 function initRealtime(){
   sb.channel('finanzas-changes')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'finanzas_movimientos'}, payload=>{
-      const existed=transactions.some(t=>String(t.id)===String(payload.new.id));
+      const existed=transactions.some(t=>sameEntity(t,payload.new));
       addOrUpdateTransaction(payload.new);
       renderAll();
-      renderDeskHistory();
-      if(!existed) showToast('🔄 Nuevo movimiento sincronizado');
+      if(!existed && !isOwnRealtimeRow(payload.new)) showToast('🔄 Nuevo movimiento sincronizado');
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'finanzas_movimientos'}, payload=>{
       addOrUpdateTransaction(payload.new);
       renderAll();
-      renderDeskHistory();
     })
     .on('postgres_changes', {event:'DELETE', schema:'public', table:'finanzas_movimientos'}, payload=>{
       transactions=transactions.filter(t=>String(t.id)!==String(payload.old.id));
-      saveLocal(); renderAll(); renderDeskHistory();
+      saveLocal(); renderAll();
     })
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'finanzas_deudas'}, payload=>{
-      if(!debts.find(d=>String(d.id)===String(payload.new.id))){
-        debts.unshift(payload.new);
-        saveLocal(); renderDebts(); renderDeskDebts();
-        showToast('🔄 Nueva deuda sincronizada');
-      }
+      const existed=debts.some(d=>String(d.id)===String(payload.new.id));
+      addOrUpdateDebt(payload.new);
+      renderDebts(); renderDeskDebts();
+      if(!existed) showToast('🔄 Nueva deuda sincronizada');
     })
     .on('postgres_changes', {event:'UPDATE', schema:'public', table:'finanzas_deudas'}, payload=>{
-      const i=debts.findIndex(d=>String(d.id)===String(payload.new.id));
-      if(i>=0){ debts[i]=payload.new; saveLocal(); renderDebts(); renderDeskDebts(); }
+      addOrUpdateDebt(payload.new);
+      renderDebts(); renderDeskDebts();
     })
     .on('postgres_changes', {event:'DELETE', schema:'public', table:'finanzas_deudas'}, payload=>{
       debts=debts.filter(d=>String(d.id)!==String(payload.old.id));
