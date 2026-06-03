@@ -2403,6 +2403,28 @@ async function fetchAll(){
   await fetchSaldosIniciales();
 }
 
+
+function isNetworkOrTimeoutError(e){
+  const msg = String(e?.message || e || '').toLowerCase();
+  return msg.includes('timeout') || msg.includes('failed to fetch') || msg.includes('network') || msg.includes('load failed') || msg.includes('abort');
+}
+
+function withTimeout(promise, ms=9000, label='Operación'){
+  let timer;
+  const timeout = new Promise((_, reject)=>{
+    timer = setTimeout(()=>reject(new Error(label + ' timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(()=>clearTimeout(timer));
+}
+
+function saveTxLocalPending(tx, row){
+  tx.id = tx.id || ('local_' + (tx.local_uuid || generateLocalUUID()));
+  addOrUpdateTransaction(tx);
+  addPending({table:'finanzas_movimientos', row});
+  setSynced(false);
+  return tx;
+}
+
 async function insertTx(tx){
   ensureLocalUUID(tx);
   const row={
@@ -2417,28 +2439,43 @@ async function insertTx(tx){
   };
 
   if(!navigator.onLine){
-    tx.id=tx.id || ('local_'+tx.local_uuid);
-    addOrUpdateTransaction(tx);
-    addPending({table:'finanzas_movimientos',row});
-    return tx;
+    return saveTxLocalPending(tx, row);
   }
 
-  let {data,error}=await sb.from('finanzas_movimientos').insert(row).select().single();
+  try{
+    let {data,error}=await withTimeout(
+      sb.from('finanzas_movimientos').insert(row).select().single(),
+      9000,
+      'Guardado en Supabase'
+    );
 
-  // Si todavía no agregaste las columnas nuevas en Supabase, el sistema no se rompe:
-  // reintenta sin local_uuid/client_device_id, pero la protección completa requiere el SQL indicado abajo.
-  if(error && /local_uuid|client_device_id|column/i.test(error.message||'')){
-    const fallbackRow={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
-    const retry=await sb.from('finanzas_movimientos').insert(fallbackRow).select().single();
-    data=retry.data; error=retry.error;
+    // Si todavía no agregaste las columnas nuevas en Supabase, el sistema no se rompe:
+    // reintenta sin local_uuid/client_device_id, pero la protección completa requiere el SQL indicado abajo.
+    if(error && /local_uuid|client_device_id|column/i.test(error.message||'')){
+      const fallbackRow={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
+      const retry=await withTimeout(
+        sb.from('finanzas_movimientos').insert(fallbackRow).select().single(),
+        9000,
+        'Guardado fallback en Supabase'
+      );
+      data=retry.data; error=retry.error;
+    }
+    if(error) throw error;
+
+    if(data && tx.local_uuid && !data.local_uuid) data.local_uuid=tx.local_uuid;
+    if(data && tx.client_device_id && !data.client_device_id) data.client_device_id=tx.client_device_id;
+    removeLocalTxByUUID(tx.local_uuid);
+    addOrUpdateTransaction(data);
+    return data;
+  }catch(e){
+    // En móvil/PWA, a veces navigator.onLine sigue en true aunque la conexión o Supabase quede colgado.
+    // Para no bloquear la app, guardamos localmente y queda pendiente de sincronización.
+    if(isNetworkOrTimeoutError(e)){
+      console.warn('Guardado local por problema de red/timeout:', e);
+      return saveTxLocalPending(tx, row);
+    }
+    throw e;
   }
-  if(error) throw error;
-
-  if(data && tx.local_uuid && !data.local_uuid) data.local_uuid=tx.local_uuid;
-  if(data && tx.client_device_id && !data.client_device_id) data.client_device_id=tx.client_device_id;
-  removeLocalTxByUUID(tx.local_uuid);
-  addOrUpdateTransaction(data);
-  return data;
 }
 
 async function deleteTxFromSB(id){
@@ -3276,51 +3313,65 @@ function filterManualCats(){
 async function saveManual(){
   if(savingMovimiento) return;
   savingMovimiento=true;
-  const cuenta=document.getElementById('manualCuenta').value;
-  const catInput=document.getElementById('manualCatInput').value.trim();
-  const categoria=catInput||document.getElementById('manualCat').value;
-  const monto=parseFloat(document.getElementById('manualMonto').value);
-  const desc=document.getElementById('manualDesc').value.trim();
-  if(!monto||monto<=0){savingMovimiento=false;showToast('⚠️ Ingresá un monto válido');return;}
-  if(!categoria){savingMovimiento=false;showToast('⚠️ Seleccioná una categoría');return;}
-
-  // Validar que la categoría exista
-  const catsValidas = getAllCategories(tipoManual).map(c=>c.nombre.toLowerCase());
-  if(!catsValidas.includes(categoria.toLowerCase())){
-    const crear = confirm(`"${categoria}" no existe como categoría. ¿Querés crearla como ${tipoManual}?`);
-    if(crear){
-      // Crear la categoría nueva
-      const row={nombre:categoria,tipo:tipoManual};
-      try{
-        if(navigator.onLine){
-          const{data,error}=await sb.from('finanzas_categorias').insert(row).select().single();
-          if(error) throw error;
-          addOrUpdateCustomCategory(data);
-        } else {
-          addOrUpdateCustomCategory({id:'local_'+Date.now(),...row,created_at:new Date().toISOString()});
-        }
-        saveCustomLocal();
-        rebuildDynamicData();
-      }catch(e){ savingMovimiento=false; showToast('❌ Error al crear categoría'); return; }
-    } else {
-      // Limpiar el campo y no guardar
-      document.getElementById('manualCatInput').value='';
-      document.getElementById('manualCat').value='';
-      showToast('⚠️ Elegí una categoría válida');
-      savingMovimiento=false;
-      return;
-    }
-  }
+  const btn = document.querySelector('#manualModal .modal-submit');
+  const oldBtnText = btn ? btn.textContent : 'Guardar movimiento';
+  if(btn){ btn.textContent='Guardando...'; btn.disabled=true; }
 
   try{
+    const cuenta=document.getElementById('manualCuenta').value;
+    const catInput=document.getElementById('manualCatInput').value.trim();
+    const categoria=catInput||document.getElementById('manualCat').value;
+    const monto=parseFloat(document.getElementById('manualMonto').value);
+    const desc=document.getElementById('manualDesc').value.trim();
+    if(!monto||monto<=0){showToast('⚠️ Ingresá un monto válido');return;}
+    if(!categoria){showToast('⚠️ Seleccioná una categoría');return;}
+
+    // Validar que la categoría exista
+    const catsValidas = getAllCategories(tipoManual).map(c=>c.nombre.toLowerCase());
+    if(!catsValidas.includes(categoria.toLowerCase())){
+      const crear = confirm(`"${categoria}" no existe como categoría. ¿Querés crearla como ${tipoManual}?`);
+      if(crear){
+        // Crear la categoría nueva
+        const row={nombre:categoria,tipo:tipoManual};
+        try{
+          if(navigator.onLine){
+            const{data,error}=await withTimeout(
+              sb.from('finanzas_categorias').insert(row).select().single(),
+              9000,
+              'Crear categoría'
+            );
+            if(error) throw error;
+            addOrUpdateCustomCategory(data);
+          } else {
+            addOrUpdateCustomCategory({id:'local_'+Date.now(),row,created_at:new Date().toISOString()});
+          }
+          saveCustomLocal();
+          rebuildDynamicData();
+        }catch(e){ showToast('❌ Error al crear categoría'); return; }
+      } else {
+        // Limpiar el campo y no guardar
+        document.getElementById('manualCatInput').value='';
+        document.getElementById('manualCat').value='';
+        showToast('⚠️ Elegí una categoría válida');
+        return;
+      }
+    }
+
     await insertTx({tipo:tipoManual,monto,categoria,descripcion:desc||categoria,cuenta,fecha:new Date().toISOString()});
     renderAll();
     renderDeskHistory();
     updateDeskHistCatFilter();
     document.getElementById('manualModal').classList.remove('open');
-    showToast('✅ Movimiento guardado');
-  }catch(e){showToast('❌ Error al guardar');}
+    showToast(navigator.onLine?'✅ Movimiento guardado':'💾 Guardado localmente');
+  }catch(e){
+    console.error(e);
+    showToast('❌ Error al guardar');
+  }finally{
+    savingMovimiento=false;
+    if(btn){ btn.textContent=oldBtnText; btn.disabled=false; }
+  }
 }
+
 
 // ---- TX EDITABLE ITEM ----
 function txItemEditable(tx){
