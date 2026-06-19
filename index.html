@@ -1780,6 +1780,11 @@ input[type="date"].modal-input{
     </div>
   </div>
 
+  <div id="histTotalBox" style="display:none;margin:0 16px 12px;padding:12px 14px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius-sm)">
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Ingresos</span><span id="histTotIng" style="color:var(--green);font-family:'DM Mono',monospace"></span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Gastos</span><span id="histTotGas" style="color:var(--red);font-family:'DM Mono',monospace"></span></div>
+    <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600;border-top:0.5px solid var(--border2);padding-top:6px;margin-top:2px"><span id="histTotCnt" style="color:var(--text2)"></span><span id="histTotBal" style="font-family:'DM Mono',monospace"></span></div>
+  </div>
   <div class="hist-list" id="histList"><div class="tx-empty">Sin movimientos</div></div>
 </div>
 
@@ -1806,7 +1811,37 @@ input[type="date"].modal-input{
     <h1>Estadísticas</h1>
     <p>Resumen general</p>
   </div>
+  <div class="filter-row" style="padding-bottom:6px">
+    <div class="filter-btn active" id="stcAll" onclick="setStatFilter('all',this)">Todas las cuentas</div>
+    <div class="filter-btn" id="stcPersonal" onclick="setStatFilter('Personal',this)">👤 Personal</div>
+    <div class="filter-btn" id="stcGuaripola" onclick="setStatFilter('Guaripola',this)">🍺 Guaripola</div>
+    <div class="filter-btn" id="stcAsaditos" onclick="setStatFilter('Asaditos',this)">🔥 Asaditos</div>
+    <div class="filter-btn" id="stcTragamonedas" onclick="setStatFilter('Tragamonedas',this)">🎰 Tragamonedas</div>
+  </div>
+  <div style="display:flex;gap:8px;padding:0 16px 12px">
+    <div style="flex:1">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Categoría</div>
+      <select class="modal-input" id="statCat" onchange="renderStats()" style="margin:0;padding:8px 10px;font-size:13px"><option value="all">Todas las categorías</option></select>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;padding:0 16px 12px">
+    <div style="flex:1">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Desde</div>
+      <input type="date" class="modal-input" id="statDateFrom" oninput="renderStats()" style="margin:0;padding:8px 10px;font-size:13px"/>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:10px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Hasta</div>
+      <input type="date" class="modal-input" id="statDateTo" oninput="renderStats()" style="margin:0;padding:8px 10px;font-size:13px"/>
+    </div>
+    <div style="display:flex;align-items:flex-end">
+      <button onclick="clearStatFilters()" style="padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:12px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif">Limpiar</button>
+    </div>
+  </div>
   <div class="stats-grid" id="statsGrid"></div>
+  <div class="chart-section">
+    <div class="chart-title">Resumen por cuenta</div>
+    <div id="cuentaResumen"></div>
+  </div>
   <div class="chart-section">
     <div class="chart-title">Top gastos por categoría</div>
     <div id="chartBars"></div>
@@ -1814,6 +1849,22 @@ input[type="date"].modal-input{
   <div class="chart-section">
     <div class="chart-title">Ingresos por cuenta</div>
     <div id="ingresosBars"></div>
+  </div>
+  <div class="chart-section">
+    <div class="chart-title">Top ingresos por categoría</div>
+    <div id="ingCatBars"></div>
+  </div>
+  <div class="chart-section">
+    <div class="chart-title">Top proveedores</div>
+    <div id="provBars"></div>
+  </div>
+  <div class="chart-section">
+    <div class="chart-title">Gastos por cuenta</div>
+    <div id="gastoCuentaBars"></div>
+  </div>
+  <div class="chart-section">
+    <div class="chart-title">Balance neto por cuenta</div>
+    <div id="balCuentaBars"></div>
   </div>
 </div>
 
@@ -1879,6 +1930,9 @@ input[type="date"].modal-input{
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
     Nueva categoría
   </button>
+  <button class="add-debt-btn" onclick="openMergeCatModal()">
+    🔗 Fusionar categorías
+  </button>
 
   <!-- HERRAMIENTA SEGURA: LIMPIAR DESCRIPCIONES ANTIGUAS -->
   <div class="section-head" style="margin:18px 0 8px">
@@ -1936,6 +1990,24 @@ input[type="date"].modal-input{
       <button class="tipo-btn" id="newCatBtnAmbos" onclick="setNewCatTipo('ambos')">↕ Ambos</button>
     </div>
     <button class="modal-submit" onclick="saveNuevaCat()">Crear categoría</button>
+  </div>
+</div>
+
+<!-- MODAL FUSIONAR CATEGORÍAS -->
+<div class="modal-overlay" id="mergeCatModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Fusionar categorías</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.45;margin-bottom:12px">
+      Mueve todos los movimientos de una categoría a otra. La categoría de origen se elimina.
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.06em">Origen (se elimina)</div>
+    <select class="modal-input" id="mergeOrigen"></select>
+    <div style="font-size:11px;color:var(--text3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em">Destino</div>
+    <select class="modal-input" id="mergeDestino"></select>
+    <div id="mergePreview" style="font-size:12px;color:var(--text3);margin:8px 0"></div>
+    <button class="modal-submit" onclick="confirmMergeCat()">Fusionar</button>
+    <button onclick="document.getElementById('mergeCatModal').classList.remove('open')" style="width:100%;padding:11px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:8px">Cancelar</button>
   </div>
 </div>
 
@@ -2127,6 +2199,12 @@ input[type="date"].modal-input{
       <div class="desk-card" style="padding:0;overflow:hidden">
         <table class="desk-table"><thead><tr><th>Tipo</th><th>Descripción</th><th>Categoría</th><th>Cuenta</th><th>Fecha</th><th style="text-align:right">Monto</th><th></th></tr></thead><tbody id="deskHistBody"></tbody></table>
       </div>
+      <div id="deskHistTotal" style="display:none;margin-top:12px;display:flex;gap:14px;flex-wrap:wrap">
+        <div class="desk-card" style="flex:1;min-width:140px"><div class="desk-card-label">Ingresos (filtro)</div><div class="desk-card-value" style="color:var(--green)" id="deskHistTotIng"></div></div>
+        <div class="desk-card" style="flex:1;min-width:140px"><div class="desk-card-label">Gastos (filtro)</div><div class="desk-card-value" style="color:var(--red)" id="deskHistTotGas"></div></div>
+        <div class="desk-card" style="flex:1;min-width:140px"><div class="desk-card-label">Balance (filtro)</div><div class="desk-card-value" id="deskHistTotBal"></div></div>
+        <div class="desk-card" style="flex:1;min-width:140px"><div class="desk-card-label">Movimientos</div><div class="desk-card-value" id="deskHistTotCnt"></div></div>
+      </div>
     </div>
     <!-- DESKTOP: DEUDAS -->
     <div class="desktop-page" id="dpage-deudas">
@@ -2139,10 +2217,22 @@ input[type="date"].modal-input{
     <!-- DESKTOP: STATS -->
     <div class="desktop-page" id="dpage-stats">
       <div class="desk-header"><h1>Estadísticas</h1><p>Resumen general</p></div>
+      <div class="desk-filters">
+        <select class="desk-filter-select" id="deskStatCuenta" onchange="renderDeskStats()"><option value="all">Todas las cuentas</option><option value="Personal">👤 Personal</option><option value="Guaripola">🍺 Guaripola</option><option value="Asaditos">🔥 Asaditos</option><option value="Tragamonedas">🎰 Tragamonedas</option></select>
+        <select class="desk-filter-select" id="deskStatCat" onchange="renderDeskStats()"><option value="all">Todas las categorías</option></select>
+        <input type="date" class="desk-filter-input" id="deskStatFrom" onchange="renderDeskStats()" />
+        <input type="date" class="desk-filter-input" id="deskStatTo" onchange="renderDeskStats()" />
+        <button class="desk-clear-btn" onclick="clearDeskStatFilters()">Limpiar</button>
+      </div>
       <div class="desk-grid-3" id="deskStatCards"></div>
+      <div class="desk-card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--text2);margin-bottom:8px">Resumen por cuenta</div><div id="deskCuentaResumen"></div></div>
       <div class="desk-grid-2">
         <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Top gastos por categoría</div><div id="deskChartBars"></div></div>
         <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Ingresos por cuenta</div><div id="deskIngresosBars"></div></div>
+        <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Top ingresos por categoría</div><div id="deskIngCatBars"></div></div>
+        <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Top proveedores</div><div id="deskProvBars"></div></div>
+        <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Gastos por cuenta</div><div id="deskGastoCuentaBars"></div></div>
+        <div class="desk-card"><div style="font-size:13px;color:var(--text2);margin-bottom:14px">Balance neto por cuenta</div><div id="deskBalCuentaBars"></div></div>
       </div>
     </div>
     <!-- DESKTOP: CONFIG -->
@@ -2174,7 +2264,10 @@ input[type="date"].modal-input{
         <div class="desk-card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <div style="font-size:14px;font-weight:500">Categorías</div>
-            <button onclick="openNewCatModal()" style="padding:7px 14px;border-radius:var(--radius-sm);background:var(--accent);border:none;color:#0f1a14;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nueva</button>
+            <div style="display:flex;gap:8px">
+              <button onclick="openMergeCatModal()" style="padding:7px 14px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">🔗 Fusionar</button>
+              <button onclick="openNewCatModal()" style="padding:7px 14px;border-radius:var(--radius-sm);background:var(--accent);border:none;color:#0f1a14;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">+ Nueva</button>
+            </div>
           </div>
           <div style="display:flex;gap:8px;margin-bottom:12px">
             <button class="filter-btn active" id="deskCatTabGasto" onclick="setDeskCatTab('gasto',this)">📤 Gastos</button>
@@ -2577,6 +2670,104 @@ function setSynced(ok){
 
 // ---- FORMAT ----
 function fmtGs(n){const abs=Math.abs(Math.round(n));return (n<0?'- ':'')+'Gs. '+abs.toLocaleString('es-PY')}
+// Parsea monto desde texto libre: quita puntos de miles, convierte coma decimal
+function parseMonto(str){
+  return parseFloat(String(str ?? '').replace(/\./g,'').replace(',','.'));
+}
+// Filtro unificado de movimientos (móvil + desktop, historial + estadísticas)
+function filterTx(txs,{tipo='all',cuenta='all',cat='all',search='',from='',to=''}={}){
+  let r=txs;
+  if(tipo&&tipo!=='all') r=r.filter(t=>t.tipo===tipo);
+  if(cuenta&&cuenta!=='all') r=r.filter(t=>t.cuenta===cuenta);
+  if(cat&&cat!=='all') r=r.filter(t=>t.categoria===cat);
+  const s=(search||'').toLowerCase().trim();
+  if(s) r=r.filter(t=>(t.descripcion||'').toLowerCase().includes(s)||(t.categoria||'').toLowerCase().includes(s));
+  if(from) r=r.filter(t=>new Date(t.fecha)>=new Date(from));
+  if(to) r=r.filter(t=>new Date(t.fecha)<=new Date(to+'T23:59:59'));
+  return r;
+}
+const STAT_BAR_COLORS=['var(--red)','var(--amber)','var(--purple)','var(--blue)','var(--green)','var(--accent)','var(--text2)'];
+const PROVEEDORES_SET=new Set(CATEGORIES.proveedores.items.map(s=>s.toLowerCase()));
+// entries: [label,value][]  prefix: 'bar' (móvil) | 'desk-bar' (desktop)
+function statBars(entries,prefix,colorByIndex){
+  if(!entries.length) return '<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Sin datos</div>';
+  const max=Math.max(...entries.map(e=>Math.abs(e[1])),1);
+  return entries.map(([label,val],i)=>{
+    const col=colorByIndex?colorByIndex(i,label,val):STAT_BAR_COLORS[i%STAT_BAR_COLORS.length];
+    return `<div class="${prefix}-row"><div class="${prefix}-label">${label}</div><div class="${prefix}-track"><div class="${prefix}-fill" style="width:${Math.round(Math.abs(val)/max*100)}%;background:${col}"></div></div><div class="${prefix}-val">${fmtGs(val)}</div></div>`;
+  }).join('');
+}
+function topByCat(txs,tipo,n){
+  const m={};
+  txs.filter(t=>t.tipo===tipo).forEach(t=>{const c=t.categoria||'General';m[c]=(m[c]||0)+Number(t.monto);});
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+function topProveedores(txs,n){
+  const m={};
+  txs.filter(t=>t.tipo==='gasto'&&PROVEEDORES_SET.has((t.categoria||'').toLowerCase())).forEach(t=>{const c=t.categoria;m[c]=(m[c]||0)+Number(t.monto);});
+  return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+function totalsPorCuenta(txs,tipo){
+  const m={};ACCOUNTS.forEach(a=>m[a]=0);
+  txs.filter(t=>t.tipo===tipo).forEach(t=>{m[t.cuenta]=(m[t.cuenta]||0)+Number(t.monto);});
+  return m;
+}
+function balancePorCuenta(txs){
+  const m={};ACCOUNTS.forEach(a=>m[a]=0);
+  txs.forEach(t=>{m[t.cuenta]=(m[t.cuenta]||0)+(t.tipo==='ingreso'?1:-1)*Number(t.monto);});
+  return m;
+}
+const ACCOUNT_COLORS={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
+function incomeExpense(txs){
+  let income=0,expense=0;
+  txs.forEach(t=>{const m=Number(t.monto);if(t.tipo==='ingreso')income+=m;else expense+=m;});
+  return {income,expense};
+}
+// Barras por cuenta (ingreso o gasto), prefix 'bar'|'desk-bar'
+function accountBars(txs,tipo,prefix){
+  const m=totalsPorCuenta(txs,tipo);
+  return statBars(
+    ACCOUNTS.map(a=>[`${ACCOUNT_EMOJIS[a]||'💼'} ${a}`,m[a]]),
+    prefix,
+    i=>ACCOUNT_COLORS[ACCOUNTS[i]]||STAT_BAR_COLORS[i%STAT_BAR_COLORS.length]
+  );
+}
+// Resumen ordenado: ingreso, gasto y balance por cuenta en una sola vista
+function resumenPorCuenta(txs){
+  const m={};
+  txs.forEach(t=>{
+    const c=t.cuenta||'—';
+    if(!m[c])m[c]={ing:0,gas:0};
+    if(t.tipo==='ingreso')m[c].ing+=Number(t.monto);else m[c].gas+=Number(t.monto);
+  });
+  return Object.entries(m).map(([cuenta,v])=>({cuenta,ing:v.ing,gas:v.gas,bal:v.ing-v.gas}))
+    .sort((a,b)=>b.bal-a.bal);
+}
+function resumenCuentaHTML(rows,big){
+  if(!rows.length) return '<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Sin datos</div>';
+  const fs=big?'13px':'12px';
+  return rows.map(r=>{
+    const emoji=ACCOUNT_EMOJIS[r.cuenta]||'💼';
+    return `<div style="padding:10px 0;border-bottom:0.5px solid var(--border2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:${fs};font-weight:600;color:var(--text)">${emoji} ${r.cuenta}</span>
+        <span style="font-size:${fs};font-weight:600;font-family:'DM Mono',monospace;color:${r.bal>=0?'var(--green)':'var(--red)'}">${fmtGs(r.bal)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px">
+        <span style="color:var(--green)">▲ ${fmtGs(r.ing)}</span>
+        <span style="color:var(--red)">▼ ${fmtGs(r.gas)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+function populateStatCatSelects(){
+  const cats=[...new Set(transactions.map(t=>t.categoria).filter(Boolean))].sort();
+  const opts='<option value="all">Todas las categorías</option>'+cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  ['statCat','deskStatCat'].forEach(id=>{
+    const sel=document.getElementById(id);
+    if(sel){const cur=sel.value;sel.innerHTML=opts;sel.value=cats.includes(cur)||cur==='all'?cur:'all';}
+  });
+}
 function fmtDate(iso){
   const d=new Date(iso);
   return d.toLocaleDateString('es-PY',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -2669,7 +2860,7 @@ function renderBalance(){
 }
 
 function renderAccountCards(){
-  const accColors={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
+  const accColors=ACCOUNT_COLORS;
   const saldos=getSaldosIniciales();
   const el=document.getElementById('accountCards');
   if(!el) return;
@@ -2748,19 +2939,29 @@ function buildCatFilterPills(txs){
 }
 
 function renderHistory(){
-  let txs=[...transactions];
-  if(histFilters.tipo!=='all') txs=txs.filter(t=>t.tipo===histFilters.tipo);
-  if(histFilters.cuenta!=='all') txs=txs.filter(t=>t.cuenta===histFilters.cuenta);
-  // build cat pills from filtered-by-tipo+cuenta set
-  buildCatFilterPills(txs);
-  if(histFilters.cat!=='all') txs=txs.filter(t=>t.categoria===histFilters.cat);
-  const search=(document.getElementById('histSearch')||{}).value?.toLowerCase().trim();
-  if(search) txs=txs.filter(t=>(t.descripcion||'').toLowerCase().includes(search)||(t.categoria||'').toLowerCase().includes(search));
-  const dateFrom=document.getElementById('filtDateFrom')?.value;
-  const dateTo=document.getElementById('filtDateTo')?.value;
-  if(dateFrom) txs=txs.filter(t=>new Date(t.fecha)>=new Date(dateFrom));
-  if(dateTo) txs=txs.filter(t=>new Date(t.fecha)<=new Date(dateTo+'T23:59:59'));
+  const base=filterTx(transactions,{tipo:histFilters.tipo,cuenta:histFilters.cuenta});
+  buildCatFilterPills(base);
+  const txs=filterTx(base,{
+    cat:histFilters.cat,
+    search:document.getElementById('histSearch')?.value,
+    from:document.getElementById('filtDateFrom')?.value,
+    to:document.getElementById('filtDateTo')?.value
+  });
   const el=document.getElementById('histList');
+  const tBox=document.getElementById('histTotalBox');
+  if(tBox){
+    if(txs.length){
+      const ing=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
+      const gas=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
+      const bal=ing-gas;
+      document.getElementById('histTotIng').textContent=fmtGs(ing);
+      document.getElementById('histTotGas').textContent=fmtGs(gas);
+      document.getElementById('histTotCnt').textContent=txs.length+' mov.';
+      const bEl=document.getElementById('histTotBal');
+      bEl.textContent=fmtGs(bal);bEl.style.color=bal>=0?'var(--green)':'var(--red)';
+      tBox.style.display='block';
+    } else tBox.style.display='none';
+  }
   if(!txs.length){el.innerHTML='<div class="tx-empty">Sin movimientos para los filtros seleccionados</div>';return;}
   const groups={};
   txs.forEach(tx=>{const k=fmtDateGroup(tx.fecha);if(!groups[k])groups[k]=[];groups[k].push(tx);});
@@ -2775,29 +2976,70 @@ function renderDebts(){
   document.getElementById('debtTotal').textContent=fmtGs(total);
   const el=document.getElementById('debtList');
   if(!debts.length){el.innerHTML='<div class="tx-empty" style="text-align:center;padding:20px;color:var(--text3)">Sin deudas registradas</div>';return;}
-  el.innerHTML=debts.map((d,i)=>{
-    const pct=Math.round((1-d.monto_restante/d.monto_original)*100);
-    return `<div class="debt-card">
+  el.innerHTML=debts.map(d=>debtCardHTML(d,false)).join('');
+}
+// Tarjeta de deuda unificada. desk=false → móvil (clases CSS); desk=true → desktop (inline)
+function debtCardHTML(d,desk){
+  const pct=Math.round((1-d.monto_restante/d.monto_original)*100);
+  const abonado=`Abonado: ${fmtGs(d.monto_original-d.monto_restante)} de ${fmtGs(d.monto_original)}`;
+  if(desk){
+    return `<div class="desk-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:15px;font-weight:500">👤 ${d.nombre}</div>
+        <div style="font-size:16px;font-weight:600;font-family:DM Mono,monospace;color:var(--blue)">${fmtGs(d.monto_restante)}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">${d.nota||''} · ${fmtDate(d.fecha)}</div>
+      <div style="background:var(--bg3);border-radius:4px;height:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;background:var(--blue);border-radius:4px;width:${pct}%"></div></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">${abonado}</div>
+      <div style="display:flex;gap:8px">
+        <button onclick="agregarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--blue-bg);color:var(--blue);border:0.5px solid rgba(96,165,250,0.2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">＋ Agregar deuda</button>
+        <button onclick="abonarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--green-bg);color:var(--green);border:0.5px solid rgba(52,211,153,0.2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">✓ Registrar pago</button>
+        <button onclick="eliminarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Eliminar</button>
+      </div>
+    </div>`;
+  }
+  return `<div class="debt-card">
       <div class="debt-header">
         <div class="debt-name">👤 ${d.nombre}</div>
         <div class="debt-amount-badge">${fmtGs(d.monto_restante)}</div>
       </div>
       <div class="debt-detail">${d.nota||''} · ${fmtDate(d.fecha)}</div>
       <div class="debt-progress"><div class="debt-bar" style="width:${pct}%"></div></div>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Abonado: ${fmtGs(d.monto_original-d.monto_restante)} de ${fmtGs(d.monto_original)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">${abonado}</div>
       <div class="debt-actions">
         <button class="debt-btn" onclick="agregarDeuda('${d.id}')">＋ Agregar deuda</button>
         <button class="debt-btn pay" onclick="abonarDeuda('${d.id}')">✓ Registrar pago</button>
         <button class="debt-btn" onclick="eliminarDeuda('${d.id}')">Eliminar</button>
       </div>
     </div>`;
-  }).join('');
 }
 
+let statFilterCuenta='all';
+function setStatFilter(val,btn){
+  statFilterCuenta=val;
+  document.querySelectorAll('#page-stats .filter-row .filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderStats();
+}
+function clearStatFilters(){
+  statFilterCuenta='all';
+  ['statDateFrom','statDateTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  const sc=document.getElementById('statCat');if(sc)sc.value='all';
+  document.querySelectorAll('#page-stats .filter-row .filter-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('stcAll')?.classList.add('active');
+  renderStats();
+}
 function renderStats(){
-  const txs=transactions;
-  const income=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
-  const expense=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
+  populateStatCatSelects();
+  const txs=filterTx(transactions,{
+    cuenta:statFilterCuenta,
+    cat:document.getElementById('statCat')?.value,
+    from:document.getElementById('statDateFrom')?.value,
+    to:document.getElementById('statDateTo')?.value
+  });
+  const rc=document.getElementById('cuentaResumen');
+  if(rc) rc.innerHTML=resumenCuentaHTML(resumenPorCuenta(txs));
+  const {income,expense}=incomeExpense(txs);
   const bal=income-expense;
   document.getElementById('statsGrid').innerHTML=`
     <div class="stat-card"><div class="stat-label">Total ingresos</div><div class="stat-value" style="color:var(--green)">${fmtGs(income)}</div></div>
@@ -2805,20 +3047,13 @@ function renderStats(){
     <div class="stat-card"><div class="stat-label">Balance neto</div><div class="stat-value" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmtGs(bal)}</div></div>
     <div class="stat-card"><div class="stat-label">Movimientos</div><div class="stat-value">${txs.length}</div></div>
   `;
-  const catTotals={};
-  txs.filter(t=>t.tipo==='gasto').forEach(t=>{const c=t.categoria||'General';catTotals[c]=(catTotals[c]||0)+Number(t.monto);});
-  const topCats=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).slice(0,7);
-  const maxCat=topCats[0]?.[1]||1;
-  const barColors=['var(--red)','var(--amber)','var(--purple)','var(--blue)','var(--green)','var(--accent)','var(--text2)'];
-  document.getElementById('chartBars').innerHTML=topCats.length
-    ?topCats.map(([cat,total],i)=>`<div class="bar-row"><div class="bar-label">${cat}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(total/maxCat*100)}%;background:${barColors[i%barColors.length]}"></div></div><div class="bar-val">${fmtGs(total)}</div></div>`).join('')
-    :'<div style="color:var(--text3);font-size:13px;text-align:center;padding:12px">Sin datos aún</div>';
-  const accTotals={};
-  ACCOUNTS.forEach(a=>accTotals[a]=0);
-  txs.filter(t=>t.tipo==='ingreso').forEach(t=>{accTotals[t.cuenta]=(accTotals[t.cuenta]||0)+Number(t.monto);});
-  const maxAcc=Math.max(...Object.values(accTotals),1);
-  const accColors={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
-  document.getElementById('ingresosBars').innerHTML=ACCOUNTS.map(acc=>`<div class="bar-row"><div class="bar-label">${ACCOUNT_EMOJIS[acc]} ${acc}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round(accTotals[acc]/maxAcc*100)}%;background:${accColors[acc]}"></div></div><div class="bar-val">${fmtGs(accTotals[acc])}</div></div>`).join('');
+  document.getElementById('chartBars').innerHTML=statBars(topByCat(txs,'gasto',7),'bar');
+  document.getElementById('ingresosBars').innerHTML=accountBars(txs,'ingreso','bar');
+  document.getElementById('ingCatBars').innerHTML=statBars(topByCat(txs,'ingreso',7),'bar');
+  document.getElementById('provBars').innerHTML=statBars(topProveedores(txs,7),'bar');
+  document.getElementById('gastoCuentaBars').innerHTML=accountBars(txs,'gasto','bar');
+  const bc=balancePorCuenta(txs);
+  document.getElementById('balCuentaBars').innerHTML=statBars(ACCOUNTS.map(a=>[`${ACCOUNT_EMOJIS[a]} ${a}`,bc[a]]),'bar',(i,l,v)=>v>=0?'var(--green)':'var(--red)');
 }
 
 function renderAll(){
@@ -3164,7 +3399,7 @@ async function saveDebt(){
   const nombre=document.getElementById('debtName').value.trim();
   const monto=parseFloat(document.getElementById('debtAmount').value);
   const nota=document.getElementById('debtNote').value.trim();
-  if(!nombre||!monto){showToast('⚠️ Completá nombre y monto');return;}
+  if(!nombre||!monto||monto<=0){showToast('⚠️ Completá nombre y un monto válido');return;}
   try{
     const fecha=new Date().toISOString();
     await insertDebt({nombre,monto_original:monto,monto_restante:monto,nota,cuenta:'Personal',fecha});
@@ -3182,7 +3417,7 @@ async function agregarDeuda(id){
   if(!debt) return;
   const amt=prompt(`¿Cuánto querés agregar a la deuda de ${debt.nombre}? (Gs.)`);
   if(!amt) return;
-  const n=parseFloat(String(amt).replace(/\./g,'').replace(',','.'));
+  const n=parseMonto(amt);
   if(isNaN(n)||n<=0){showToast('⚠️ Monto inválido');return;}
   const motivo=(prompt('Motivo o nota de esta nueva deuda (opcional):')||'').trim();
   const afectaSaldo=confirm('¿Registrar también como gasto en el saldo general?\n\nAceptar: suma la deuda y baja el saldo general.\nCancelar: solo suma la deuda del deudor.');
@@ -3216,9 +3451,11 @@ async function abonarDeuda(id){
   if(!debt) return;
   const amt=prompt(`¿Cuánto abonó ${debt.nombre}? (Gs.)`);
   if(!amt) return;
-  const n=parseFloat(amt);
-  if(isNaN(n)||n<=0) return;
-  const nuevo=Math.max(0,Number(debt.monto_restante)-n);
+  const n=parseMonto(amt);
+  if(isNaN(n)||n<=0){showToast('⚠️ Monto inválido');return;}
+  const restante=Number(debt.monto_restante);
+  if(n>restante && !confirm(`El abono (${fmtGs(n)}) supera lo que debe (${fmtGs(restante)}).\n\nAceptar: registra el abono completo y la deuda queda saldada.\nCancelar: corregir el monto.`)) return;
+  const nuevo=Math.max(0,restante-n);
   try{
     await insertTx({tipo:'ingreso',monto:n,categoria:'Cobro de deuda',descripcion:`Abono de ${debt.nombre}`,cuenta:'Personal',fecha:new Date().toISOString()});
     await updateDebt(id,{monto_restante:nuevo});
@@ -3320,7 +3557,7 @@ async function saveManual(){
   try{
     const cuenta=document.getElementById('manualCuenta').value;
     const catInput=document.getElementById('manualCatInput').value.trim();
-    const categoria=catInput||document.getElementById('manualCat').value;
+    const categoria=normalizeCatName(catInput||document.getElementById('manualCat').value);
     const monto=parseFloat(document.getElementById('manualMonto').value);
     const desc=document.getElementById('manualDesc').value.trim();
     if(!monto||monto<=0){showToast('⚠️ Ingresá un monto válido');return;}
@@ -3429,13 +3666,17 @@ function populateEditCats(tipo,current){
 }
 async function saveEditTx(){
   const id=document.getElementById('editTxId').value;
+  const fechaRaw=document.getElementById('editFecha').value;
+  const fechaObj=new Date(fechaRaw);
+  if(!fechaRaw||isNaN(fechaObj.getTime())){showToast('⚠️ Fecha inválida');return;}
+  if(fechaObj.getTime()>Date.now()+60000 && !confirm('La fecha es futura. ¿Guardar igual?')) return;
   const updates={
     tipo:editTipoVal,
     cuenta:document.getElementById('editCuenta').value,
     categoria:document.getElementById('editCat').value,
     monto:parseFloat(document.getElementById('editMonto').value),
     descripcion:document.getElementById('editDesc').value,
-    fecha:new Date(document.getElementById('editFecha').value).toISOString(),
+    fecha:fechaObj.toISOString(),
   };
   if(!updates.monto||updates.monto<=0){showToast('⚠️ Monto inválido');return;}
   try{
@@ -3511,7 +3752,7 @@ function renderDeskTopCards(){
 }
 
 function renderDeskAccCards(){
-  const accColors={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
+  const accColors=ACCOUNT_COLORS;
   const saldos=getSaldosIniciales();
   const el=document.getElementById('deskAccCards');
   if(!el) return;
@@ -3559,19 +3800,28 @@ function renderDeskRecentTx(){
 function renderDeskHistory(){
   const el=document.getElementById('deskHistBody');
   if(!el) return;
-  let txs=[...transactions];
-  const search=(document.getElementById('deskHistSearch')||{}).value?.toLowerCase().trim();
-  const tipo=(document.getElementById('deskFiltTipo')||{}).value||'all';
-  const cuenta=(document.getElementById('deskFiltCuenta')||{}).value||'all';
-  const cat=(document.getElementById('deskFiltCat')||{}).value||'all';
-  const from=(document.getElementById('deskFiltFrom')||{}).value;
-  const to=(document.getElementById('deskFiltTo')||{}).value;
-  if(tipo!=='all') txs=txs.filter(t=>t.tipo===tipo);
-  if(cuenta!=='all') txs=txs.filter(t=>t.cuenta===cuenta);
-  if(cat!=='all') txs=txs.filter(t=>t.categoria===cat);
-  if(search) txs=txs.filter(t=>(t.descripcion||'').toLowerCase().includes(search)||(t.categoria||'').toLowerCase().includes(search));
-  if(from) txs=txs.filter(t=>new Date(t.fecha)>=new Date(from));
-  if(to) txs=txs.filter(t=>new Date(t.fecha)<=new Date(to+'T23:59:59'));
+  const txs=filterTx(transactions,{
+    tipo:document.getElementById('deskFiltTipo')?.value,
+    cuenta:document.getElementById('deskFiltCuenta')?.value,
+    cat:document.getElementById('deskFiltCat')?.value,
+    search:document.getElementById('deskHistSearch')?.value,
+    from:document.getElementById('deskFiltFrom')?.value,
+    to:document.getElementById('deskFiltTo')?.value
+  });
+  const tBox=document.getElementById('deskHistTotal');
+  if(tBox){
+    if(txs.length){
+      const ing=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
+      const gas=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
+      const bal=ing-gas;
+      document.getElementById('deskHistTotIng').textContent=fmtGs(ing);
+      document.getElementById('deskHistTotGas').textContent=fmtGs(gas);
+      document.getElementById('deskHistTotCnt').textContent=txs.length;
+      const bEl=document.getElementById('deskHistTotBal');
+      bEl.textContent=fmtGs(bal);bEl.style.color=bal>=0?'var(--green)':'var(--red)';
+      tBox.style.display='flex';
+    } else tBox.style.display='none';
+  }
   if(!txs.length){el.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:24px">Sin resultados</td></tr>';return;}
   el.innerHTML=txs.map(tx=>{
     const isIn=tx.tipo==='ingreso';
@@ -3608,31 +3858,29 @@ function renderDeskDebts(){
   const el=document.getElementById('deskDebtCards');
   if(!el) return;
   if(!debts.length){el.innerHTML='<div style="color:var(--text3);font-size:13px;padding:20px">Sin deudas registradas</div>';return;}
-  el.innerHTML=debts.map((d,i)=>{
-    const pct=Math.round((1-d.monto_restante/d.monto_original)*100);
-    return `<div class="desk-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <div style="font-size:15px;font-weight:500">👤 ${d.nombre}</div>
-        <div style="font-size:16px;font-weight:600;font-family:DM Mono,monospace;color:var(--blue)">${fmtGs(d.monto_restante)}</div>
-      </div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">${d.nota||''} · ${fmtDate(d.fecha)}</div>
-      <div style="background:var(--bg3);border-radius:4px;height:4px;overflow:hidden;margin-bottom:6px"><div style="height:100%;background:var(--blue);border-radius:4px;width:${pct}%"></div></div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">Abonado: ${fmtGs(d.monto_original-d.monto_restante)} de ${fmtGs(d.monto_original)}</div>
-      <div style="display:flex;gap:8px">
-        <button onclick="agregarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--blue-bg);color:var(--blue);border:0.5px solid rgba(96,165,250,0.2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">＋ Agregar deuda</button>
-        <button onclick="abonarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--green-bg);color:var(--green);border:0.5px solid rgba(52,211,153,0.2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">✓ Registrar pago</button>
-        <button onclick="eliminarDeuda('${d.id}')" style="flex:1;padding:8px;border-radius:var(--radius-sm);background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Eliminar</button>
-      </div>
-    </div>`;
-  }).join('');
+  el.innerHTML=debts.map(d=>debtCardHTML(d,true)).join('');
 }
 
+function clearDeskStatFilters(){
+  const c=document.getElementById('deskStatCuenta');if(c)c.value='all';
+  const cc=document.getElementById('deskStatCat');if(cc)cc.value='all';
+  ['deskStatFrom','deskStatTo'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  renderDeskStats();
+}
 function renderDeskStats(){
-  const txs=transactions;
+  populateStatCatSelects();
+  const fCuenta=document.getElementById('deskStatCuenta')?.value||'all';
+  const txs=filterTx(transactions,{
+    cuenta:fCuenta,
+    cat:document.getElementById('deskStatCat')?.value,
+    from:document.getElementById('deskStatFrom')?.value,
+    to:document.getElementById('deskStatTo')?.value
+  });
+  const rc=document.getElementById('deskCuentaResumen');
+  if(rc) rc.innerHTML=resumenCuentaHTML(resumenPorCuenta(txs),true);
   const saldosSt=getSaldosIniciales();
-  const totalSISt=Object.values(saldosSt).reduce((a,b)=>a+Number(b),0);
-  const income=txs.filter(t=>t.tipo==='ingreso').reduce((a,t)=>a+Number(t.monto),0);
-  const expense=txs.filter(t=>t.tipo==='gasto').reduce((a,t)=>a+Number(t.monto),0);
+  const totalSISt=(fCuenta==='all')?Object.values(saldosSt).reduce((a,b)=>a+Number(b),0):Number(saldosSt[fCuenta]||0);
+  const {income,expense}=incomeExpense(txs);
   const bal=totalSISt+income-expense;
   const el=document.getElementById('deskStatCards');
   if(!el) return;
@@ -3640,19 +3888,14 @@ function renderDeskStats(){
     <div class="desk-card"><div class="desk-card-label">Saldo neto</div><div class="desk-card-value" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmtGs(bal)}</div></div>
     <div class="desk-card"><div class="desk-card-label">Ingresos</div><div class="desk-card-value" style="color:var(--green)">${fmtGs(income)}</div></div>
     <div class="desk-card"><div class="desk-card-label">Gastos</div><div class="desk-card-value" style="color:var(--red)">${fmtGs(expense)}</div></div>`;
-  const catTotals={};
-  txs.filter(t=>t.tipo==='gasto').forEach(t=>{const c=t.categoria||'General';catTotals[c]=(catTotals[c]||0)+Number(t.monto);});
-  const topCats=Object.entries(catTotals).sort((a,b)=>b[1]-a[1]).slice(0, 5);
-  const maxCat=topCats[0]?.[1]||1;
-  const barColors=['var(--red)','var(--amber)','var(--purple)','var(--blue)','var(--green)','var(--accent)','var(--text2)'];
-  const cb=document.getElementById('deskChartBars');
-  if(cb) cb.innerHTML=topCats.length?topCats.map(([cat,total],i)=>`<div class="desk-bar-row"><div class="desk-bar-label">${cat}</div><div class="desk-bar-track"><div class="desk-bar-fill" style="width:${Math.round(total/maxCat*100)}%;background:${barColors[i%barColors.length]}"></div></div><div class="desk-bar-val">${fmtGs(total)}</div></div>`).join(''):'<div style="color:var(--text3);font-size:13px">Sin datos</div>';
-  const accTotals={};ACCOUNTS.forEach(a=>accTotals[a]=0);
-  txs.filter(t=>t.tipo==='ingreso').forEach(t=>{accTotals[t.cuenta]=(accTotals[t.cuenta]||0)+Number(t.monto);});
-  const maxAcc=Math.max(...Object.values(accTotals),1);
-  const accColors={Personal:'var(--blue)',Guaripola:'var(--amber)',Asaditos:'var(--red)',Tragamonedas:'var(--purple)'};
-  const ib=document.getElementById('deskIngresosBars');
-  if(ib) ib.innerHTML=ACCOUNTS.map(acc=>`<div class="desk-bar-row"><div class="desk-bar-label">${ACCOUNT_EMOJIS[acc]} ${acc}</div><div class="desk-bar-track"><div class="desk-bar-fill" style="width:${Math.round(accTotals[acc]/maxAcc*100)}%;background:${accColors[acc]}"></div></div><div class="desk-bar-val">${fmtGs(accTotals[acc])}</div></div>`).join('');
+  const set=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;};
+  set('deskChartBars',statBars(topByCat(txs,'gasto',5),'desk-bar'));
+  set('deskIngresosBars',accountBars(txs,'ingreso','desk-bar'));
+  set('deskIngCatBars',statBars(topByCat(txs,'ingreso',5),'desk-bar'));
+  set('deskProvBars',statBars(topProveedores(txs,5),'desk-bar'));
+  set('deskGastoCuentaBars',accountBars(txs,'gasto','desk-bar'));
+  const bc=balancePorCuenta(txs);
+  set('deskBalCuentaBars',statBars(ACCOUNTS.map(a=>[`${ACCOUNT_EMOJIS[a]} ${a}`,bc[a]]),'desk-bar',(i,l,v)=>v>=0?'var(--green)':'var(--red)'));
 }
 
 function deskProcesar(){
@@ -3886,6 +4129,16 @@ function getAllAccounts(){
   ];
 }
 
+// Normaliza nombre de categoría: limpia espacios y reusa una existente si coincide (sin importar mayúsculas)
+function normalizeCatName(input){
+  let n=String(input||'').replace(/\s+/g,' ').trim();
+  if(!n) return n;
+  const existing=[...getAllCategories('gasto'),...getAllCategories('ingreso')]
+    .find(c=>c.nombre.toLowerCase()===n.toLowerCase());
+  if(existing) return existing.nombre;
+  return n.charAt(0).toUpperCase()+n.slice(1);
+}
+
 function getAllCategories(tipo){
   // Built-in
   const builtIn = tipo==='ingreso'
@@ -3999,8 +4252,10 @@ function setNewCatTipo(tipo){
   document.getElementById('newCatBtnAmbos').className='tipo-btn'+(tipo==='ambos'?' active':'');
 }
 async function saveNuevaCat(){
-  const nombre=document.getElementById('newCatNombre').value.trim();
+  const nombre=normalizeCatName(document.getElementById('newCatNombre').value);
   if(!nombre){showToast('⚠️ Ingresá un nombre');return;}
+  const dup=[...getAllCategories('gasto'),...getAllCategories('ingreso')].find(c=>c.nombre===nombre);
+  if(dup){showToast('⚠️ Esa categoría ya existe');document.getElementById('newCatModal').classList.remove('open');return;}
   try{
     const row={nombre,tipo:newCatTipoVal};
     if(navigator.onLine){
@@ -4025,6 +4280,48 @@ async function deleteCat(id){
     rebuildDynamicData();
     showToast('🗑 Categoría eliminada');
   }catch(e){showToast('❌ Error');}
+}
+
+function openMergeCatModal(){
+  const used=[...new Set(transactions.map(t=>t.categoria).filter(Boolean))].sort();
+  const allCats=[...new Set([...getAllCategories('gasto'),...getAllCategories('ingreso')].map(c=>c.nombre))].sort();
+  const o=document.getElementById('mergeOrigen');
+  const d=document.getElementById('mergeDestino');
+  o.innerHTML=used.length?used.map(c=>`<option value="${c}">${c} (${transactions.filter(t=>t.categoria===c).length})</option>`).join(''):'<option value="">Sin categorías con movimientos</option>';
+  d.innerHTML=allCats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  o.onchange=updateMergePreview; d.onchange=updateMergePreview;
+  updateMergePreview();
+  document.getElementById('mergeCatModal').classList.add('open');
+}
+function updateMergePreview(){
+  const o=document.getElementById('mergeOrigen').value;
+  const n=transactions.filter(t=>t.categoria===o).length;
+  document.getElementById('mergePreview').textContent=o?`Se moverán ${n} movimiento(s) de "${o}".`:'';
+}
+async function confirmMergeCat(){
+  const origen=document.getElementById('mergeOrigen').value;
+  const destino=document.getElementById('mergeDestino').value;
+  if(!origen||!destino){showToast('⚠️ Elegí ambas categorías');return;}
+  if(origen===destino){showToast('⚠️ Elegí categorías distintas');return;}
+  const n=transactions.filter(t=>t.categoria===origen).length;
+  if(!confirm(`Mover ${n} movimiento(s) de "${origen}" a "${destino}" y eliminar "${origen}"?`)) return;
+  try{
+    if(navigator.onLine){
+      const{error}=await sb.from('finanzas_movimientos').update({categoria:destino}).eq('categoria',origen);
+      if(error) throw error;
+      const cc=customCategories.find(c=>c.nombre===origen);
+      if(cc && !String(cc.id).startsWith('local_')) await sb.from('finanzas_categorias').delete().eq('id',cc.id);
+    } else {
+      transactions.forEach(t=>{if(t.categoria===origen)t.categoria=destino;});
+    }
+    customCategories=customCategories.filter(c=>c.nombre!==origen);
+    saveCustomLocal();
+    rebuildDynamicData();
+    if(navigator.onLine) await fetchAll();
+    renderAll();
+    document.getElementById('mergeCatModal').classList.remove('open');
+    showToast(`✅ "${origen}" → "${destino}"`);
+  }catch(e){console.error(e);showToast('❌ Error al fusionar');}
 }
 
 
