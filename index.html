@@ -1780,6 +1780,9 @@ input[type="date"].modal-input{
     </div>
   </div>
 
+  <div style="padding:0 16px 10px">
+    <button onclick="openCatReport()" style="width:100%;padding:10px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📊 Reporte por categoría</button>
+  </div>
   <div id="histTotalBox" style="display:none;margin:0 16px 12px;padding:12px 14px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius-sm)">
     <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Ingresos</span><span id="histTotIng" style="color:var(--green);font-family:'DM Mono',monospace"></span></div>
     <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Gastos</span><span id="histTotGas" style="color:var(--red);font-family:'DM Mono',monospace"></span></div>
@@ -1994,6 +1997,16 @@ input[type="date"].modal-input{
 </div>
 
 <!-- MODAL FUSIONAR CATEGORÍAS -->
+<div class="modal-overlay" id="catReportModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Reporte por categoría</div>
+    <div id="catReportCount" style="font-size:12px;color:var(--text3);margin-bottom:10px"></div>
+    <div id="catReportBody" style="max-height:55vh;overflow-y:auto"></div>
+    <button onclick="document.getElementById('catReportModal').classList.remove('open')" style="width:100%;padding:11px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:14px;cursor:pointer;font-family:'DM Sans',sans-serif;margin-top:12px">Cerrar</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="mergeCatModal" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="modal-sheet">
     <div class="modal-handle"></div>
@@ -2194,6 +2207,7 @@ input[type="date"].modal-input{
         <input type="date" class="desk-filter-input" id="deskFiltFrom" onchange="renderDeskHistory()" />
         <input type="date" class="desk-filter-input" id="deskFiltTo" onchange="renderDeskHistory()" />
         <button class="desk-clear-btn" onclick="clearDeskFilters()">Limpiar</button>
+        <button onclick="openCatReport('desk')" style="padding:8px 14px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif">📊 Reporte por categoría</button>
         <button onclick="openManualModal()" style="padding:8px 14px;border-radius:var(--radius-sm);background:var(--accent);border:none;color:#0f1a14;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-left:auto">+ Nuevo</button>
       </div>
       <div class="desk-card" style="padding:0;overflow:hidden">
@@ -2406,18 +2420,25 @@ function scheduleRender(){
   renderQueued=true;
   requestAnimationFrame(()=>{
     renderQueued=false;
-    renderBalance();
-    renderTxList();
-    renderStats();
-    renderDesktop();
-    if(typeof refreshHomeExtras === 'function') setTimeout(refreshHomeExtras, 0);
-    const activeDPage = document.querySelector('.desktop-page.active');
-    if(activeDPage){
-      const id = activeDPage.id;
-      if(id==='dpage-historial') renderDeskHistory();
-      if(id==='dpage-deudas') renderDeskDebts();
-      if(id==='dpage-stats') renderDeskStats();
+    const isDesk = window.matchMedia('(min-width:900px)').matches;
+    if(isDesk){
+      renderDesktop();
+      const activeDPage = document.querySelector('.desktop-page.active');
+      if(activeDPage){
+        const id = activeDPage.id;
+        if(id==='dpage-historial') renderDeskHistory();
+        if(id==='dpage-deudas') renderDeskDebts();
+      }
+    } else {
+      renderBalance();
+      renderTxList();
+      const ap = document.querySelector('.page.active');
+      const apid = ap ? ap.id : '';
+      if(apid==='page-stats') renderStats();
+      if(apid==='page-historial') renderHistory();
+      if(apid==='page-deudas') renderDebts();
     }
+    if(typeof refreshHomeExtras === 'function') setTimeout(refreshHomeExtras, 0);
   });
 }
 
@@ -2938,6 +2959,41 @@ function buildCatFilterPills(txs){
     +cats.map(c=>`<div class="filter-btn${current===c?' active':''}" onclick="setHistFilter('cat','${c.replace(/'/g,"\'")}',this)">${c}</div>`).join('');
 }
 
+function openCatReport(src){
+  const v=id=>document.getElementById(id)?.value;
+  const base = src==='desk'
+    ? {cuenta:v('deskFiltCuenta')||'all',cat:v('deskFiltCat')||'all',search:v('deskHistSearch'),from:v('deskFiltFrom'),to:v('deskFiltTo')}
+    : {cuenta:histFilters.cuenta,cat:histFilters.cat,search:v('histSearch'),from:v('filtDateFrom'),to:v('filtDateTo')};
+  const buildSection=(tipo,label,color)=>{
+    const txs=filterTx(transactions,{...base,tipo});
+    const m={};
+    txs.forEach(t=>{const c=t.categoria||'Sin categoría';m[c]=(m[c]||0)+Number(t.monto);});
+    const rows=Object.entries(m).sort((a,b)=>b[1]-a[1]);
+    const total=rows.reduce((a,r)=>a+r[1],0);
+    let html='<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:6px 0 4px">'+label+'</div>';
+    if(!rows.length){
+      html+='<div class="tx-empty" style="padding:10px 0">Sin movimientos</div>';
+    } else {
+      html+=rows.map(([c,v])=>{
+        const pct=total?Math.round(v/total*100):0;
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:0.5px solid var(--border2)">'
+          +'<div style="min-width:0;flex:1"><div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+c+'</div>'
+          +'<div style="font-size:11px;color:var(--text3)">'+pct+'%</div></div>'
+          +'<div style="font-family:\'DM Mono\',monospace;font-size:13px;color:'+color+';white-space:nowrap;padding-left:10px">'+fmtGs(v)+'</div></div>';
+      }).join('')
+      +'<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:600;font-size:14px"><span>Total '+label.toLowerCase()+'</span><span style="font-family:\'DM Mono\',monospace;color:'+color+'">'+fmtGs(total)+'</span></div>';
+    }
+    return {html,count:txs.length,cats:rows.length,total};
+  };
+  const g=buildSection('gasto','Gastos','var(--red)');
+  const i=buildSection('ingreso','Ingresos','var(--green)');
+  const body=document.getElementById('catReportBody');
+  body.innerHTML=g.html
+    +'<div style="height:14px"></div>'+i.html
+    +'<div style="display:flex;justify-content:space-between;padding-top:12px;margin-top:8px;border-top:0.5px solid var(--border2);font-weight:600;font-size:14px"><span>Balance</span><span style="font-family:\'DM Mono\',monospace;color:'+((i.total-g.total)>=0?'var(--green)':'var(--red)')+'">'+fmtGs(i.total-g.total)+'</span></div>';
+  document.getElementById('catReportCount').textContent=(g.count+i.count)+' mov. · '+g.cats+' cat. gasto · '+i.cats+' cat. ingreso';
+  document.getElementById('catReportModal').classList.add('open');
+}
 function renderHistory(){
   const base=filterTx(transactions,{tipo:histFilters.tipo,cuenta:histFilters.cuenta});
   buildCatFilterPills(base);
