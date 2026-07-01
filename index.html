@@ -2505,11 +2505,9 @@ function clearPending(){
 // ---- SUPABASE ----
 async function fetchAll(){
   try{
-    const cutoff = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Asuncion',year:'numeric',month:'2-digit',day:'2-digit'})
-      .format(new Date(Date.now() - 30*24*60*60*1000));
     const[[{data:txData},{data:debtData}]]=await Promise.all([
       Promise.all([
-        sb.from('finanzas_movimientos').select('*').gte('fecha',cutoff).order('fecha',{ascending:false}),
+        sb.from('finanzas_movimientos').select('*').order('fecha',{ascending:false}),
         sb.from('finanzas_deudas').select('*').order('fecha',{ascending:false})
       ]),
       fetchCustom(),
