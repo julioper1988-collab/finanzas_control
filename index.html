@@ -1756,7 +1756,7 @@ input[type="date"].modal-input{
   </div>
 
   <!-- FILTER PILLS: CUENTA -->
-  <div class="filter-row" style="padding-bottom:6px">
+  <div class="filter-row" style="padding-bottom:6px" id="histCuentaRow">
     <div class="filter-btn active" id="fcAll" onclick="setHistFilter('cuenta','all',this)">Todas las cuentas</div>
     <div class="filter-btn" id="fcPersonal" onclick="setHistFilter('cuenta','Personal',this)">👤 Personal</div>
     <div class="filter-btn" id="fcGuaripola" onclick="setHistFilter('cuenta','Guaripola',this)">🍺 Guaripola</div>
@@ -1818,7 +1818,7 @@ input[type="date"].modal-input{
     <h1>Estadísticas</h1>
     <p>Resumen general</p>
   </div>
-  <div class="filter-row" style="padding-bottom:6px">
+  <div class="filter-row" style="padding-bottom:6px" id="statCuentaRow">
     <div class="filter-btn active" id="stcAll" onclick="setStatFilter('all',this)">Todas las cuentas</div>
     <div class="filter-btn" id="stcPersonal" onclick="setStatFilter('Personal',this)">👤 Personal</div>
     <div class="filter-btn" id="stcGuaripola" onclick="setStatFilter('Guaripola',this)">🍺 Guaripola</div>
@@ -2938,8 +2938,8 @@ let histFilters={tipo:'all',cuenta:'all',cat:'all'};
 function setHistFilter(dim,val,btn){
   histFilters[dim]=val;
   // deactivate siblings in same group
-  const groups={tipo:['ftAll','ftIngreso','ftGasto'],cuenta:['fcAll','fcPersonal','fcGuaripola','fcAsaditos','fcTragamonedas']};
-  if(groups[dim]) groups[dim].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active');});
+  if(dim==='cuenta') document.querySelectorAll('#histCuentaRow .filter-btn').forEach(b=>b.classList.remove('active'));
+  else if(dim==='tipo') ['ftAll','ftIngreso','ftGasto'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active');});
   else document.querySelectorAll('#catFilterRow .filter-btn').forEach(b=>b.classList.remove('active'));
   if(btn) btn.classList.add('active');
   renderHistory();
@@ -2951,7 +2951,8 @@ function clearHistFilters(){
   document.getElementById('filtDateFrom').value='';
   document.getElementById('filtDateTo').value='';
   ['ftAll','fcAll','fCatAll'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('active');});
-  ['ftIngreso','ftGasto','fcPersonal','fcGuaripola','fcAsaditos','fcTragamonedas'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active');});
+  ['ftIngreso','ftGasto'].forEach(id=>{const el=document.getElementById(id);if(el)el.classList.remove('active');});
+  document.querySelectorAll('#histCuentaRow .filter-btn:not(#fcAll)').forEach(b=>b.classList.remove('active'));
   document.querySelectorAll('#catFilterRow .filter-btn:not(#fCatAll)').forEach(b=>b.classList.remove('active'));
   renderHistory();
 }
@@ -4208,6 +4209,20 @@ function getAllCategories(tipo){
   return [...builtIn,...custom];
 }
 
+function renderAccountFilterRows(){
+  const accs=getAllAccounts();
+  const rows=[
+    {id:'histCuentaRow',allId:'fcAll',cur:histFilters.cuenta,fn:(n)=>`setHistFilter('cuenta','${n.replace(/'/g,"\\'")}',this)`},
+    {id:'statCuentaRow',allId:'stcAll',cur:(typeof statFilterCuenta!=='undefined'?statFilterCuenta:'all'),fn:(n)=>`setStatFilter('${n.replace(/'/g,"\\'")}',this)`}
+  ];
+  rows.forEach(r=>{
+    const el=document.getElementById(r.id); if(!el) return;
+    const allFn = r.id==='histCuentaRow' ? "setHistFilter('cuenta','all',this)" : "setStatFilter('all',this)";
+    el.innerHTML=`<div class="filter-btn${r.cur==='all'?' active':''}" id="${r.allId}" onclick="${allFn}">Todas las cuentas</div>`
+      +accs.map(a=>`<div class="filter-btn${r.cur===a.nombre?' active':''}" onclick="${r.fn(a.nombre)}">${a.emoji||'📁'} ${a.nombre}</div>`).join('');
+  });
+}
+
 function rebuildDynamicData(){
   // Rebuild ACCOUNTS array used throughout app
   const allAccs = getAllAccounts();
@@ -4222,6 +4237,7 @@ function rebuildDynamicData(){
   // Update account chips in mobile balance
   const accountRow=document.getElementById('accountCards');
   // renderBalance already handles cards dynamically from transactions
+  renderAccountFilterRows();
   renderConfigPage();
   renderDeskConfig();
   renderBalance();
