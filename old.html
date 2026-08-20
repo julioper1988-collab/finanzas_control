@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0f0f11">
 <title>Mis Finanzas Resumen Hoy Corregido</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
@@ -1840,18 +1844,6 @@ input[type="date"].modal-input{
       <button onclick="clearStatFilters()" style="padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);font-size:12px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif">Limpiar</button>
     </div>
   </div>
-  <div class="chart-section">
-    <div class="chart-title">Neto diario por negocio <span style="font-size:10px;color:var(--text3);font-weight:400">v2026-08-20</span></div>
-    <div style="display:flex;gap:8px;padding:0 0 10px;align-items:center;flex-wrap:wrap">
-      <select class="modal-input" id="ndDias" onchange="renderNetoDiario()" style="margin:0;padding:6px 8px;font-size:12px;width:auto">
-        <option value="7">7 dias</option><option value="15" selected>15 dias</option><option value="30">30 dias</option>
-      </select>
-      <label style="font-size:11px;color:var(--text3);display:flex;align-items:center;gap:5px">
-        <input type="checkbox" id="ndSoloOper" checked onchange="renderNetoDiario()"/> stock aparte
-      </label>
-    </div>
-    <div id="netoDiario" style="overflow-x:auto"></div>
-  </div>
   <div class="stats-grid" id="statsGrid"></div>
   <div class="chart-section">
     <div class="chart-title">Resumen por cuenta</div>
@@ -2250,18 +2242,6 @@ input[type="date"].modal-input{
         <input type="date" class="desk-filter-input" id="deskStatTo" onchange="renderDeskStats()" />
         <button class="desk-clear-btn" onclick="clearDeskStatFilters()">Limpiar</button>
       </div>
-      <div class="desk-card" style="margin-bottom:14px">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-          <div style="font-size:13px;color:var(--text2)">Neto diario por negocio <span style="font-size:10px;color:var(--text3)">v2026-08-20</span></div>
-          <select class="desk-filter-select" id="ndDiasD" onchange="renderNetoDiario('D')" style="margin-left:auto">
-            <option value="7">7 dias</option><option value="15" selected>15 dias</option><option value="30">30 dias</option>
-          </select>
-          <label style="font-size:12px;color:var(--text3);display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="ndSoloOperD" checked onchange="renderNetoDiario('D')"/> stock aparte
-          </label>
-        </div>
-        <div id="netoDiarioD" style="overflow-x:auto"></div>
-      </div>
       <div class="desk-grid-3" id="deskStatCards"></div>
       <div class="desk-card" style="margin-bottom:14px"><div style="font-size:13px;color:var(--text2);margin-bottom:8px">Resumen por cuenta</div><div id="deskCuentaResumen"></div></div>
       <div class="desk-grid-2">
@@ -2523,30 +2503,12 @@ function clearPending(){
 }
 
 // ---- SUPABASE ----
-// Trae TODAS las filas paginando de a 1000 (PostgREST corta ahi por defecto).
-async function fetchTodo(tabla, orden){
-  const PAGE = 1000;
-  let desde = 0, out = [];
-  for(;;){
-    const {data, error} = await sb.from(tabla).select('*')
-      .order(orden, {ascending:false})
-      .range(desde, desde + PAGE - 1);
-    if(error) throw error;
-    if(!data || !data.length) break;
-    out = out.concat(data);
-    if(data.length < PAGE) break;
-    desde += PAGE;
-  }
-  return out;
-}
-
 async function fetchAll(){
   try{
-    // Sin cutoff: la historia completa vive en Supabase, no en el cache del navegador.
-    const[[txData,debtData]]=await Promise.all([
+    const[[{data:txData},{data:debtData}]]=await Promise.all([
       Promise.all([
-        fetchTodo('finanzas_movimientos','fecha'),
-        fetchTodo('finanzas_deudas','fecha')
+        sb.from('finanzas_movimientos').select('*').order('fecha',{ascending:false}),
+        sb.from('finanzas_deudas').select('*').order('fecha',{ascending:false})
       ]),
       fetchCustom(),
       fetchSaldosIniciales()
@@ -2561,33 +2523,6 @@ async function fetchAll(){
   }
 }
 
-
-// ===== fecha de venta real =====
-// El cobro de tarjeta entra al dia siguiente: corresponde a la venta del dia anterior.
-// El backfill y el default los garantiza un trigger en Supabase; esto es para la UI y el modo offline.
-const CATS_DESFASADAS = {'Tarjeta':1};
-function calcFechaVenta(tipo, categoria, fechaISO){
-  const d = new Date(fechaISO);
-  const py = new Date(d.getTime() - 4*3600*1000); // Paraguay UTC-4 fijo
-  const off = (tipo === 'ingreso' && CATS_DESFASADAS[categoria]) ? CATS_DESFASADAS[categoria] : 0;
-  return new Date(Date.UTC(py.getUTCFullYear(), py.getUTCMonth(), py.getUTCDate() - off))
-           .toISOString().slice(0,10);
-}
-function fechaVentaDe(tx){
-  return tx.fecha_venta || calcFechaVenta(tx.tipo, tx.categoria, tx.fecha);
-}
-// clase: operativo | stock | no_operativo
-function claseDe(tx){
-  if(tx.clase_override) return tx.clase_override;
-  const c = customCategories.find(x =>
-    normName(x.nombre) === normName(tx.categoria) &&
-    (x.cuenta == null || x.cuenta === tx.cuenta) &&
-    (x.tipo === tx.tipo || x.tipo === 'ambos'));
-  return (c && c.clase) ? c.clase : 'operativo';
-}
-function esDesfasada(tipo, categoria){
-  return tipo === 'ingreso' && !!CATS_DESFASADAS[categoria];
-}
 
 function isNetworkOrTimeoutError(e){
   const msg = String(e?.message || e || '').toLowerCase();
@@ -2619,7 +2554,6 @@ async function insertTx(tx){
     descripcion:tx.descripcion,
     cuenta:tx.cuenta,
     fecha:tx.fecha,
-    fecha_venta:calcFechaVenta(tx.tipo,tx.categoria,tx.fecha),
     local_uuid:tx.local_uuid,
     client_device_id:tx.client_device_id
   };
@@ -2638,7 +2572,7 @@ async function insertTx(tx){
     // Si todavía no agregaste las columnas nuevas en Supabase, el sistema no se rompe:
     // reintenta sin local_uuid/client_device_id, pero la protección completa requiere el SQL indicado abajo.
     if(error && /local_uuid|client_device_id|column/i.test(error.message||'')){
-      const fallbackRow={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha,fecha_venta:calcFechaVenta(tx.tipo,tx.categoria,tx.fecha)};
+      const fallbackRow={tipo:tx.tipo,monto:tx.monto,categoria:tx.categoria,descripcion:tx.descripcion,cuenta:tx.cuenta,fecha:tx.fecha};
       const retry=await withTimeout(
         sb.from('finanzas_movimientos').insert(fallbackRow).select().single(),
         9000,
@@ -2672,13 +2606,6 @@ async function deleteTxFromSB(id){
   saveLocal();
 }
 async function updateTxInSB(id,updates){
-  {
-    const cur = transactions.find(t=>String(t.id)===String(id)) || {};
-    const merged = {...cur, ...updates};
-    if(merged.tipo && merged.fecha && updates.fecha_venta === undefined){
-      updates = {...updates, fecha_venta: calcFechaVenta(merged.tipo, merged.categoria, merged.fecha)};
-    }
-  }
   if(!String(id).startsWith('local_')){
     await sb.from('finanzas_movimientos').update(updates).eq('id',id);
   }
@@ -3164,68 +3091,7 @@ function clearStatFilters(){
   document.getElementById('stcAll')?.classList.add('active');
   renderStats();
 }
-// ===== Neto diario por negocio (usa fecha_venta y clase) =====
-function renderNetoDiario(sfx){
-  sfx = sfx || '';
-  const cont=document.getElementById('netoDiario'+sfx);
-  if(!cont) return;
-  const dias=parseInt((document.getElementById('ndDias'+sfx)||{}).value||'15',10);
-  const stockAparte=!!(document.getElementById('ndSoloOper'+sfx)||{}).checked;
-  const hoy=calcFechaVenta('gasto','',new Date().toISOString());
-  const desde=new Date(Date.UTC(+hoy.slice(0,4),+hoy.slice(5,7)-1,+hoy.slice(8,10)-(dias-1))).toISOString().slice(0,10);
-  const CUENTAS=['Guaripola','Asaditos'];
-  const map={};
-  transactions.forEach(t=>{
-    if(!CUENTAS.includes(t.cuenta)) return;
-    const fv=fechaVentaDe(t);
-    if(fv<desde||fv>hoy) return;
-    const cl=claseDe(t);
-    if(cl==='no_operativo') return;
-    const k=fv+'|'+t.cuenta;
-    if(!map[k]) map[k]={fv,cuenta:t.cuenta,local:0,tarjeta:0,monchis:0,pya:0,otros:0,gastos:0,stock:0};
-    const r=map[k], m=Number(t.monto)||0;
-    if(t.tipo==='ingreso'){
-      if(/^venta (en )?local$/i.test(t.categoria||'')) r.local+=m;
-      else if(t.categoria==='Tarjeta') r.tarjeta+=m;
-      else if(t.categoria==='Venta Monchis') r.monchis+=m;
-      else if(t.categoria==='Venta Pedidos Ya') r.pya+=m;
-      else r.otros+=m;
-    }else{
-      if(cl==='stock'&&stockAparte) r.stock+=m; else r.gastos+=m;
-    }
-  });
-  const filas=Object.values(map).sort((a,b)=>a.fv<b.fv?1:a.fv>b.fv?-1:a.cuenta.localeCompare(b.cuenta));
-  if(!filas.length){cont.innerHTML='<div style="padding:12px;color:var(--text3);font-size:13px">Sin datos en el rango</div>';return;}
-  const n=v=>v?Number(v).toLocaleString('es-PY'):'—';
-  const th='padding:6px 8px;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;text-align:right';
-  const td='padding:6px 8px;font-size:12px;white-space:nowrap;text-align:right';
-  let h='<table style="width:100%;border-collapse:collapse;min-width:620px">';
-  h+='<tr><th style="'+th+';text-align:left">Dia</th><th style="'+th+';text-align:left">Cuenta</th>'
-   +'<th style="'+th+'">Local</th><th style="'+th+'">Tarjeta</th><th style="'+th+'">Monchis</th>'
-   +'<th style="'+th+'">PYa</th><th style="'+th+'">Otros</th><th style="'+th+'">Total ing.</th>'
-   +'<th style="'+th+'">Gastos</th>'+(stockAparte?'<th style="'+th+'">Stock</th>':'')+'<th style="'+th+'">Neto</th></tr>';
-  filas.forEach(r=>{
-    const ing=r.local+r.tarjeta+r.monchis+r.pya+r.otros, neto=ing-r.gastos;
-    const col=neto<0?'#e5484d':'#30a46c';
-    const d=r.fv.slice(8,10)+'/'+r.fv.slice(5,7);
-    h+='<tr style="border-top:0.5px solid var(--border2)">'
-     +'<td style="'+td+';text-align:left">'+d+'</td><td style="'+td+';text-align:left">'+r.cuenta+'</td>'
-     +'<td style="'+td+'">'+n(r.local)+'</td><td style="'+td+'">'+n(r.tarjeta)+'</td>'
-     +'<td style="'+td+'">'+n(r.monchis)+'</td><td style="'+td+'">'+n(r.pya)+'</td>'
-     +'<td style="'+td+'">'+n(r.otros)+'</td><td style="'+td+';font-weight:600">'+n(ing)+'</td>'
-     +'<td style="'+td+'">'+n(r.gastos)+'</td>'
-     +(stockAparte?'<td style="'+td+';color:var(--text3)">'+n(r.stock)+'</td>':'')
-     +'<td style="'+td+';font-weight:700;color:'+col+'">'+n(neto)+'</td></tr>';
-  });
-  cont.innerHTML=h+'</table>';
-}
-
 function renderStats(){
-  try{ renderNetoDiario(); }catch(e){
-    console.error('renderNetoDiario:', e);
-    const c=document.getElementById('netoDiario');
-    if(c) c.innerHTML='<div style="padding:12px;color:#e5484d;font-size:12px">Error: '+(e.message||e)+'</div>';
-  }
   populateStatCatSelects();
   const txs=filterTx(transactions,{
     cuenta:statFilterCuenta,
@@ -4064,11 +3930,6 @@ function clearDeskStatFilters(){
   renderDeskStats();
 }
 function renderDeskStats(){
-  try{ renderNetoDiario('D'); }catch(e){
-    console.error('renderNetoDiario D:', e);
-    const c=document.getElementById('netoDiarioD');
-    if(c) c.innerHTML='<div style="padding:12px;color:#e5484d;font-size:12px">Error: '+(e.message||e)+'</div>';
-  }
   populateStatCatSelects();
   const fCuenta=document.getElementById('deskStatCuenta')?.value||'all';
   const txs=filterTx(transactions,{
@@ -4335,39 +4196,16 @@ function normalizeCatName(input){
   return n.charAt(0).toUpperCase()+n.slice(1);
 }
 
-function getAllCategories(tipo, cuenta){
+function getAllCategories(tipo){
   // Built-in
   const builtIn = tipo==='ingreso'
     ? CATEGORIES.ventas.items.map(n=>({nombre:n,tipo:'ingreso',fixed:true}))
     : [...CATEGORIES.proveedores.items,...CATEGORIES.personas.items,...CATEGORIES.generales.items].map(n=>({nombre:n,tipo:'gasto',fixed:true}));
-  // Custom (desde finanzas_categorias, ya trae cuenta y clase)
+  // Custom
   const custom = customCategories
     .filter(c=>c.tipo===tipo||c.tipo==='ambos')
     .map(c=>({...c,fixed:false}));
-
-  let all = [...custom, ...builtIn];
-
-  if(cuenta){
-    // Si la cuenta tiene categorias propias en el catalogo, mostramos solo esas.
-    const propias = custom.filter(c=>c.cuenta===cuenta);
-    if(propias.length){
-      const sinCuenta = custom.filter(c=>c.cuenta==null);
-      all = [...propias, ...sinCuenta];
-    }
-  }
-  // dedupe por nombre normalizado
-  const vistos=new Set();
-  return all.filter(c=>{
-    const k=normName(c.nombre);
-    if(vistos.has(k)) return false;
-    vistos.add(k); return true;
-  });
-}
-
-function cuentaSeleccionada(ctx){
-  const id = ctx==='edit' ? 'editCuenta' : 'manualCuenta';
-  const el = document.getElementById(id);
-  return el ? el.value : null;
+  return [...builtIn,...custom];
 }
 
 function rebuildDynamicData(){
@@ -4721,7 +4559,7 @@ function renderDeskConfig(){
 
 // ── UPDATE updateManualCats to include custom cats ────────────────────────────
 function updateManualCats(){
-  const cats=getAllCategories(tipoManual, cuentaSeleccionada('manual'));
+  const cats=getAllCategories(tipoManual);
   const dl=document.getElementById('manualCatList');
   if(dl) dl.innerHTML=cats.map(c=>`<option value="${c.nombre}">`).join('');
   document.getElementById('manualCatInput').value='';
@@ -4729,7 +4567,7 @@ function updateManualCats(){
 }
 function populateEditCats(tipo,current){
   const sel=document.getElementById('editCat');
-  const cats=getAllCategories(tipo, cuentaSeleccionada('edit'));
+  const cats=getAllCategories(tipo);
   sel.innerHTML=cats.map(c=>`<option value="${c.nombre}"${c.nombre===current?' selected':''}>${c.nombre}</option>`).join('');
   if(current&&!cats.find(c=>c.nombre===current)){
     sel.innerHTML+=`<option value="${current}" selected>${current}</option>`;
@@ -4737,19 +4575,6 @@ function populateEditCats(tipo,current){
 }
 
 // ── REALTIME for custom tables ────────────────────────────────────────────────
-// Al cambiar de cuenta, refrescar la lista de categorias (idea 4)
-document.addEventListener('change', function(ev){
-  if(ev.target && ev.target.id === 'manualCuenta' && typeof updateManualCats === 'function'){
-    updateManualCats();
-  }
-  if(ev.target && ev.target.id === 'editCuenta'){
-    const catEl = document.getElementById('editCat');
-    if(catEl && typeof populateEditCats === 'function'){
-      populateEditCats(editTipoVal, catEl.value);
-    }
-  }
-});
-
 function initCustomRealtime(){
   sb.channel('config-changes')
     .on('postgres_changes',{event:'INSERT',schema:'public',table:'finanzas_cuentas'},payload=>{
@@ -5037,6 +4862,10 @@ init();
 
   window.updateTodaySummary = updateTodaySummary;
   window.refreshHomeExtras = refreshHomeExtras;
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
 })();
 </script>
 
