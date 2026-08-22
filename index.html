@@ -1618,6 +1618,43 @@ input[type="date"].modal-input{
 }
 
 </style>
+
+<style id="income-expense-color-fix">
+/* Diferenciar claramente ingresos y gastos */
+.income-val,
+.balance-card .bal-mini-val.income-val,
+.tx-amount.income-val,
+.td-amt.income-val {
+  color: var(--green) !important;
+}
+
+.expense-val,
+.balance-card .bal-mini-val.expense-val,
+.tx-amount.expense-val,
+.td-amt.expense-val {
+  color: var(--red) !important;
+}
+
+/* Mantener los importes del historial diferenciados incluso con estilos iOS/dark */
+.tx-item .tx-amount[style*="var(--green)"],
+.desk-table .td-amt[style*="var(--green)"] {
+  color: var(--green) !important;
+}
+
+.tx-item .tx-amount[style*="var(--red)"],
+.desk-table .td-amt[style*="var(--red)"] {
+  color: var(--red) !important;
+}
+
+/* En la tarjeta principal, que no sean ambos blancos */
+.balance-card .income-val {
+  color: #30D158 !important;
+}
+.balance-card .expense-val {
+  color: #FF453A !important;
+}
+</style>
+
 </head>
 <body>
 
