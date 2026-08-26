@@ -1655,6 +1655,126 @@ input[type="date"].modal-input{
 }
 </style>
 
+
+
+<style id="light-mode-contrast-fix">
+/* =========================================================
+   MODO CLARO — contraste y legibilidad mejorados
+   Solo visual: no modifica JS, Supabase ni datos.
+   ========================================================= */
+@media (prefers-color-scheme: light) {
+  :root{
+    --bg:#F1F3F7 !important;
+    --bg2:rgba(255,255,255,.94) !important;
+    --bg3:#F4F5F8 !important;
+    --border:rgba(17,24,39,.14) !important;
+    --border2:rgba(17,24,39,.22) !important;
+    --text:#101318 !important;
+    --text2:#3F4652 !important;
+    --text3:#5F6672 !important;
+    --green:#15803D !important;
+    --red:#DC2626 !important;
+    --blue:#006FE6 !important;
+    --purple:#4F46C8 !important;
+  }
+
+  body{color:var(--text) !important;}
+
+  /* Texto principal y secundario */
+  .header-title,.page-header h1,.desk-header h1,
+  .tx-name,.debt-name,.modal-title,.sidebar-logo,
+  .desk-table td,.today-title,.desk-today-title,
+  .today-metric strong,.desk-today-row strong,.desk-today-total strong,
+  .entry-label{
+    color:var(--text) !important;
+  }
+
+  .header-greeting,.page-header p,.desk-header p,
+  .section-title,.section-link,.tx-meta,.tx-empty,
+  .debt-detail,.chart-title,.bar-label,.bar-val,
+  .desk-bar-label,.desk-bar-val,.desk-card-sub,.desk-acc-sub,
+  .account-card-sub,.sidebar-sync,.today-kicker,
+  .today-metric span,.desk-today-row,.desk-today-total{
+    color:var(--text2) !important;
+    opacity:1 !important;
+  }
+
+  .bal-label,.bal-mini-label,.account-card-name,.desk-acc-name,
+  .stat-label,.debt-total-label,.desk-card-label,.desk-table th,
+  .hist-date-group{
+    color:var(--text3) !important;
+    opacity:1 !important;
+  }
+
+  /* Superficies menos transparentes: el texto no se pierde con el fondo */
+  .entry-box,.tx-list,.debt-card,.chart-section,.stat-card,
+  .desk-card,.desk-entry,.account-card,.desk-acc-card,
+  .today-summary-card{
+    background:rgba(255,255,255,.94) !important;
+    border-color:rgba(17,24,39,.12) !important;
+  }
+
+  .bal-mini,.today-metric,.tx-icon{
+    background:#F2F4F7 !important;
+    border-color:rgba(17,24,39,.10) !important;
+  }
+
+  /* Inputs y placeholders */
+  .entry-input,.modal-input,.desk-entry textarea,
+  .desk-filter-input,.desk-filter-select{
+    background:#FFFFFF !important;
+    color:var(--text) !important;
+    border-color:rgba(17,24,39,.18) !important;
+  }
+  .entry-input::placeholder,.modal-input::placeholder,
+  .desk-entry textarea::placeholder,#histSearch::placeholder{
+    color:#6B7280 !important;
+    opacity:1 !important;
+  }
+
+  /* Chips, filtros, navegación y botones secundarios */
+  .filter-btn,.account-chip,.cat-pill,.tipo-btn,
+  .btn-cancel,.desk-manual-btn,.debt-btn,.desk-clear-btn{
+    background:#FFFFFF !important;
+    color:#394150 !important;
+    border-color:rgba(17,24,39,.16) !important;
+  }
+  .nav-btn{color:#5F6672 !important;}
+  .sidebar-nav-item{color:#454C58 !important;}
+  .sidebar-sync{color:#5F6672 !important;}
+
+  /* Tablas */
+  .desk-table th{
+    background:#F1F3F6 !important;
+    color:#515866 !important;
+    border-bottom-color:rgba(17,24,39,.14) !important;
+  }
+  .desk-table td{border-bottom-color:rgba(17,24,39,.10) !important;}
+
+  /* Importes: tonos más oscuros en fondo claro */
+  .income-val,.tx-amount.income-val,.td-amt.income-val,
+  .today-metric.income strong{color:#15803D !important;}
+  .expense-val,.tx-amount.expense-val,.td-amt.expense-val,
+  .today-metric.expense strong{color:#DC2626 !important;}
+
+  /* La tarjeta de saldo conserva fondo oscuro y texto blanco */
+  .balance-card .bal-label,.balance-card .bal-mini-label{
+    color:rgba(255,255,255,.78) !important;
+  }
+  .balance-card .bal-amount,.balance-card .bal-mini-val{
+    color:#FFFFFF !important;
+  }
+  .balance-card .income-val{color:#6EE7A0 !important;}
+  .balance-card .expense-val{color:#FF8A82 !important;}
+
+  /* Mejor separación visual de navegación y modal */
+  .bottom-nav,.sidebar,.modal-sheet{
+    background:rgba(255,255,255,.94) !important;
+    border-color:rgba(17,24,39,.13) !important;
+  }
+}
+</style>
+
 </head>
 <body>
 
